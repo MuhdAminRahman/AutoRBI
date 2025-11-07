@@ -1,0 +1,1 @@
+This folder contains all the DrawIO file for the project's design
