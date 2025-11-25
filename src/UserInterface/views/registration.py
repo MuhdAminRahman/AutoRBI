@@ -2,6 +2,7 @@
 
 import tkinter as tk
 from tkinter import messagebox, ttk
+from DatabaseScripts.user import create_user
 
 
 class RegistrationView:
@@ -89,12 +90,14 @@ class RegistrationView:
                 messagebox.showwarning("Registration Error", "Password must be at least 6 characters long.")
                 return
             
-            # TODO: Integrate with backend registration
-            # if backend.register(fullname, username, password):
-            messagebox.showinfo("Success", "Registration successful! You can now login.")
-            self.controller.show_login()
-            # else:
-            #     messagebox.showerror("Registration Failed", "Username already exists or registration failed.")
+            user_id = create_user(username, password, fullname, "Engineer")  # default role
+
+            if user_id:
+
+                messagebox.showinfo("Success", "Registration successful! You can now login.")
+                self.controller.show_login()
+            else:
+                 messagebox.showerror("Registration Failed", "Username already exists or an error occurred.")
         
         register_btn = ttk.Button(
             register_card,

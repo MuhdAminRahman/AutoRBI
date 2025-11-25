@@ -1,5 +1,6 @@
 """Login view for AutoRBI application."""
 
+from DatabaseScripts.user import login_user
 import tkinter as tk
 from tkinter import messagebox, ttk
 
@@ -63,11 +64,15 @@ class LoginView:
             if not username or not password:
                 messagebox.showwarning("Login Error", "Please enter both username and password.")
                 return
-            # TODO: Integrate with backend authentication
-            # if backend.authenticate(username, password):
-            self.controller.show_main_menu()
-            # else:
-            #     messagebox.showerror("Login Failed", "Invalid username or password.")
+            
+            result = login_user(username, password)
+            if result:
+
+                self.controller.current_user = result
+                self.controller.show_main_menu()
+            else:
+                 
+                 messagebox.showerror("Login Failed", "Invalid username/password or inactive account.")
         
         login_btn = ttk.Button(
             login_card,

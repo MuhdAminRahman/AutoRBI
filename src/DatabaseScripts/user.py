@@ -1,6 +1,6 @@
 # Allows user_module to communicate with the PostgreSQL database
 import psycopg2
-from db_connection import get_connection
+from .db_connection import get_connection
 
 
 # CREATE USER function
