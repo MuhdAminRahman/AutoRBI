@@ -1,6 +1,6 @@
 
 
-Run these SQL at any query inside any database on pgAdmin or psql : 
+Run these SQL at any query tool inside any database on pgAdmin or psql : 
 
 -- 1) Create application user
 CREATE ROLE rbi_user
