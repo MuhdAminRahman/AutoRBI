@@ -1,0 +1,63 @@
+
+
+Run these SQL at any query inside any database on pgAdmin or psql : 
+
+-- 1) Create application user
+CREATE ROLE rbi_user
+    WITH LOGIN
+    PASSWORD 'AutoRBI@2025';
+
+-- 2) Create database owned by this user
+CREATE DATABASE rbi_database
+    WITH 
+    OWNER = rbi_user
+    ENCODING = 'UTF8'
+    LC_COLLATE = 'en_US.utf8'
+    LC_CTYPE = 'en_US.utf8'
+    TEMPLATE = template0;
+
+
+to run the currnet Backend you need to create this table inside the database: 
+
+-- ============================
+-- USERS TABLE
+-- ============================
+CREATE TABLE IF NOT EXISTS users (
+    user_id     SERIAL PRIMARY KEY,
+    username    VARCHAR(50) UNIQUE NOT NULL,
+    password    TEXT NOT NULL,               -- currently stored as plain text
+    full_name   TEXT NOT NULL,
+    role        VARCHAR(20) NOT NULL,        -- 'Admin' or 'Engineer'
+    status      VARCHAR(20) NOT NULL DEFAULT 'Active',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+
+
+Make sure rbi_user can actually use these tables and sequences: 
+
+
+-- Give rbi_user full rights on all tables in the public schema
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO rbi_user;
+
+-- Give rbi_user rights on all sequences (needed for SERIAL / ID columns)
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO rbi_user; 
+
+
+
+notes :
+
+
+DatabaseScripts folder must be inside src folder. 
+DatabaseScripts must have the __init__.py file. 
+
+The database connection configuration is in DatabaseScripts/db_connection.py and must match: 
+
+DB_CONFIG = {
+    "dbname": "rbi_database",
+    "user": "rbi_user",
+    "password": "AutoRBI@2025",
+    "host": "localhost",
+    "port": "5432"
+}
+
