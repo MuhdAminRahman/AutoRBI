@@ -27,10 +27,9 @@ def setup_logging():
 
 def main() -> None:
     """Run the AutoRBI application."""
-    setup_logging()
-    #app = AutoRBIApp()
-    #app.mainloop()
-    test_DataExtractor()
+    app = AutoRBIApp()
+    app.mainloop()
+    #test_DataExtractor()
 
 
 def test_DataExtractor():
