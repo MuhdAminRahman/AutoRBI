@@ -9,7 +9,7 @@ class PromptBuilder:
         """Build prompt for equipment that only need insulation extraction"""
         components_list = [comp.component_name for comp in equipment.components]
         
-        return f"""
+        prompt = f"""
         EXTRACT ONLY INSULATION DATA FOR: {equipment_number} - {equipment.equipment_description}
         
         COMPONENTS TO EXTRACT INSULATION FOR:
@@ -17,8 +17,17 @@ class PromptBuilder:
         
         INSULATION EXTRACTION:
         Look for field: "{insulation_config['field']}"
-        Expected value: {insulation_config['expected_value']}
+        """
         
+        if 'value' in insulation_config:
+            prompt += f"Value to look for: \"{insulation_config['value']}\"\n"
+        
+        if 'expected_value' in insulation_config:
+            prompt += f"Expected value: {insulation_config['expected_value']}\n"
+        else:
+            prompt += "Extract whatever value you find (yes/no or description)\n"
+        
+        prompt += """
         IMPORTANT: 
         - All components share the same insulation value
         - DO NOT EXTRACT any other data - only insulation
@@ -26,10 +35,12 @@ class PromptBuilder:
         
         RETURN FORMAT (for each component):
         COMPONENT: [Exact Component Name from list above]
-        INSULATION: [yes/no]
+        INSULATION: [yes/no or extracted value]
         
         Extract for ALL components listed above.
         """
+        
+        return prompt
     
     @staticmethod
     def build_full_extraction_prompt(equipment_number: str, equipment: Equipment, 
@@ -99,8 +110,13 @@ class PromptBuilder:
         else:
             prompt_parts.append(f"Look for field: \"{insulation_config['field']}\"")
             if 'value' in insulation_config:
-                prompt_parts.append(f"Expected value: \"{insulation_config['value']}\"")
-        prompt_parts.append(f"Convert to: {insulation_config['expected_value']}")
+                prompt_parts.append(f"Value to look for: \"{insulation_config['value']}\"")
+        
+        # Handle expected_value if it exists
+        if 'expected_value' in insulation_config:
+            prompt_parts.append(f"Expected value: {insulation_config['expected_value']}")
+        else:
+            prompt_parts.append("Extract whatever value you find")
     
     @staticmethod
     def _add_return_format(prompt_parts: list, instructions: dict, skip_operating_pressure_temp: bool):

@@ -7,9 +7,10 @@ logger = logging.getLogger(__name__)
 class DataUpdater:
     """Handles updating equipment with extracted data"""
     
-    def __init__(self, extraction_rules):
+    def __init__(self, extraction_rules, log_callback=None):
         self.rules = extraction_rules
         self.missing_equipment = set()  # Track equipment numbers with missing data
+        self.log_callback = log_callback
     
     def update_equipment(self, equipment_map: Dict[str, Equipment], extracted_data: Dict[str, Dict[str, any]]):
         """Update equipment with extracted data"""
@@ -18,7 +19,7 @@ class DataUpdater:
         for equipment_number, data in extracted_data.items():
             equipment = equipment_map.get(equipment_number)
             if not equipment:
-                logger.warning(f"Equipment {equipment_number} not found in map")
+                self.log_warning(f"Equipment {equipment_number} not found in map")
                 continue
             
             components_data = data.get('components_data', [])
@@ -26,7 +27,7 @@ class DataUpdater:
             # If no data was extracted at all, mark for retry
             if not components_data:
                 self.missing_equipment.add(equipment_number)
-                logger.warning(f"⚠️ No data extracted for {equipment_number} - will retry")
+                self.log_warning(f"⚠️ No data extracted for {equipment_number} - will retry")
                 continue
             
             for comp_data in components_data:
@@ -35,7 +36,7 @@ class DataUpdater:
             # Check if equipment still has empty fields after update
             if self._has_empty_fields(equipment):
                 self.missing_equipment.add(equipment_number)
-                logger.info(f"⚠️ {equipment_number} still has missing data - will retry")
+                self.log_info(f"⚠️ {equipment_number} still has missing data - will retry")
     
     def _has_empty_fields(self, equipment: Equipment) -> bool:
         """Check if equipment has any empty/None fields after update"""
@@ -70,16 +71,16 @@ class DataUpdater:
         """Update a single component with extracted data"""
         component = equipment.get_component(comp_data['component_name'])
         if not component:
-            logger.warning(f"Component {comp_data['component_name']} not found in equipment {equipment_number}")
+            self.log_warning(f"Component {comp_data['component_name']} not found in equipment {equipment_number}")
             return
         
         updates = self._build_updates(comp_data, equipment_number)
         if updates:
             try:
                 component.update_existing_data(updates)
-                logger.info(f" Updated {equipment_number} - {comp_data['component_name']}: {', '.join(updates.keys())}")
+                self.log_info(f" Updated {equipment_number} - {comp_data['component_name']}: {', '.join(updates.keys())}")
             except KeyError as e:
-                logger.error(f" Invalid data field {e} for {equipment_number} - {comp_data['component_name']}")
+                self.log_error(f" Invalid data field {e} for {equipment_number} - {comp_data['component_name']}")
     
     def _build_updates(self, comp_data: Dict, equipment_number: str) -> Dict:
         """Build updates dictionary from extracted component data"""
@@ -189,3 +190,21 @@ class DataUpdater:
             pass
         
         return value
+    
+    def log_info(self, message: str) -> None:
+        """Log info message to both console and UI"""
+        logger.info(message)
+        if self.log_callback:
+            self.log_callback(f"ℹ️ {message}")
+
+    def log_warning(self, message: str) -> None:
+        """Log warning message to both console and UI"""
+        logger.warning(message)
+        if self.log_callback:
+            self.log_callback(f"⚠️ {message}")
+
+    def log_error(self, message: str) -> None:
+        """Log error message to both console and UI"""
+        logger.error(message)
+        if self.log_callback:
+            self.log_callback(f"❌ {message}")
