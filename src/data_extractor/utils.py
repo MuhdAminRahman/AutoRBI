@@ -147,3 +147,25 @@ def find_equipment_images(pmt_number: str, image_dir: str = 'converted_to_image'
     image_files.sort()
     
     return image_files
+
+def get_equipment_number_from_image_path(image_path: str) -> str:
+    """
+    Extract equipment number from image file path
+    Assumes filename format: MLK PMT 10107 - H-001_page_002.png
+    where MLK PMT 10107 is the PMT number and H-001 is the equipment number
+    Returns equipment number as string  
+    """
+    filename = Path(image_path).stem  # Get filename without extension
+    parts = filename.split('_page_')[0]  # Remove page suffix if present
+    segments = parts.split(' - ')
+    if len(segments) < 2:
+        return ""
+    equipment_part = segments[1]  # e.g. H-001
+    return equipment_part.strip()
+    
+if __name__ == "__main__":
+    # Example usage
+    test_image_path = "converted_to_image\\MLK PMT 10101 - V-001_page_002.png"
+    
+    eq_number = get_equipment_number_from_image_path(test_image_path)
+    print(f"Extracted Equipment Number: {eq_number}")

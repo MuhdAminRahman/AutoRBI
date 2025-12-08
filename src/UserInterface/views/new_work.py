@@ -2,11 +2,17 @@
 
 import os
 from typing import List, Optional, Dict
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 import shutil
+import threading
+import time
 
 import customtkinter as ctk
-
+from data_extractor import MasterfileExtractor
+from data_extractor.utils import get_equipment_number_from_image_path
+from excel_manager import ExcelManager
+from convert_mypdf_to_image import PDFToImageConverter
+from models import Equipment, Component
 
 class NewWorkView:
     """Handles the New Work interface (file upload + extraction flow)."""
@@ -26,7 +32,19 @@ class NewWorkView:
         self.extraction_complete: bool = False
         self.next_button: Optional[ctk.CTkButton] = None
         # Store extracted equipment data
-        self.extracted_equipment_data: Dict[str, List[Dict]] = {}  # {file_path: [equipment_rows]}
+        self.extracted_equipment_data: Dict[str, Dict[str,Equipment]] = {}  # {file_path: [equipment_rows]}
+        
+        #Added by Amin
+        # Store Excel manager instance
+        self.excel_manager: Optional[ExcelManager] = None
+        #Store excel data
+        self.equipment_map:Dict[str, Equipment]={}
+        # Store Extractor instance
+        self.extractor:Optional[MasterfileExtractor]=None
+        # PDF converter instance
+        self.pdf_converter: Optional[PDFToImageConverter] = None
+        self.converted_images_dir: Optional[str] = None
+
 
     # Public helpers the backend can call later
     def set_progress(self, value: float, text: Optional[str] = None) -> None:
@@ -44,6 +62,10 @@ class NewWorkView:
             self.extraction_log_textbox.see("end")  # Auto-scroll to bottom
             self.extraction_log_textbox.configure(state="disabled")
 
+    def log_callback(self, message: str) -> None:
+        """Callback for logging messages from the extractor."""
+        self.append_extraction_log(message)
+
     def set_extracted_text_for_file(self, file_path: str, content: str) -> None:
         """Populate the editable extracted data area for a specific file."""
         textboxes = self.file_to_textboxes.get(file_path)
@@ -60,7 +82,7 @@ class NewWorkView:
             textbox.delete("1.0", "end")
             textbox.insert("1.0", content)
 
-    def set_extracted_equipment_data(self, file_path: str, equipment_list: List[Dict]) -> None:
+    def set_extracted_equipment_data(self, file_path: str, equipment_list: Dict[str,Equipment]) -> None:
         """
         Set extracted equipment data for a file.
         
@@ -136,7 +158,6 @@ class NewWorkView:
             work_id = work.get("id") if work else None
         
         if not work_id:
-            from tkinter import messagebox
             messagebox.showwarning("No Work Selected", "Please select a work first.")
             return
         
@@ -155,32 +176,53 @@ class NewWorkView:
             dest_file = os.path.join(dest_dir, os.path.basename(path))
             shutil.copy2(path, dest_file)
             
-            from tkinter import messagebox
             messagebox.showinfo("Success", f"Excel file uploaded successfully for {work_id}.")
             # Refresh the display to show the uploaded file
             self._refresh_file_list()
         except Exception as e:
-            from tkinter import messagebox
             messagebox.showerror("Upload Failed", f"Failed to upload Excel file:\n{e}")
 
+    #Modified to add pdf to image conversion (Amin)
     def _select_files(self, mode: str = "single") -> None:
-        """Open file dialog to select one or multiple input files."""
-        # Only allow image uploads (JPG, JPEG). PDF support removed per request.
+        """Open file/folder dialog to select PDF files and convert to images."""
         filetypes = [
-            ("Images (JPG, JPEG)", "*.jpg *.jpeg"),
-            ("JPG", "*.jpg"),
-            ("JPEG", "*.jpeg"),
+            ("PDF files", "*.pdf"),
             ("All files", "*.*"),
         ]
+        
+        converted_images = []
+        
         if mode == "single":
+            # Single PDF file
             path = filedialog.askopenfilename(filetypes=filetypes)
-            self.selected_files = [path] if path else []
-        else:
+            if path:
+                # Convert PDF to images
+                converted = self._convert_pdf_to_images([path])
+                converted_images.extend(converted)
+        elif mode == "multiple":
+            # Multiple PDF files
             paths = filedialog.askopenfilenames(filetypes=filetypes)
-            self.selected_files = list(paths)
+            if paths:
+                # Convert PDFs to images
+                converted = self._convert_pdf_to_images(list(paths))
+                converted_images.extend(converted)
+        elif mode == "folder":
+            # Entire folder of PDFs
+            folder_path = filedialog.askdirectory(title="Select folder containing PDF files")
+            if folder_path:
+                # Convert all PDFs in folder to images
+                pdf_files = self._find_pdf_files_in_folder(folder_path)
+                if pdf_files:
+                    converted = self._convert_pdf_to_images(pdf_files)
+                    converted_images.extend(converted)
+                else:
+                    messagebox.showwarning("No PDFs Found", f"No PDF files found in: {folder_path}")
+        
+        # Update selected files with converted images
+        if converted_images:
 
-        # Update list display
-        self._refresh_file_list()
+            self.selected_files = converted_images
+            self._refresh_file_list()
 
     def _refresh_file_list(self) -> None:
         # Update file list display with Excel and GA files
@@ -252,15 +294,24 @@ class NewWorkView:
 
             for file_idx, path in enumerate(self.selected_files, start=1):
                 filename = os.path.basename(path) or f"File {file_idx}"
-
+                
+                # Extract equipment number from image filename
+                equipment_number = get_equipment_number_from_image_path(path)
+                
                 # File section header
                 file_section = ctk.CTkFrame(self.files_edit_container, fg_color="transparent")
                 file_section.grid(row=file_idx - 1, column=0, sticky="ew", padx=0, pady=(12, 8))
                 file_section.grid_columnconfigure(0, weight=1)
 
+                # Show equipment number in the header if available
+                if equipment_number:
+                    header_text = f"📄 {filename} (Equipment: {equipment_number})"
+                else:
+                    header_text = f"📄 {filename}"
+                
                 name_label = ctk.CTkLabel(
                     file_section,
-                    text=f"📄 {filename}",
+                    text=header_text,
                     font=("Segoe UI", 12, "bold"),
                 )
                 name_label.pack(anchor="w", pady=(0, 8))
@@ -296,32 +347,56 @@ class NewWorkView:
                     )
                     header_label.pack(side="left", padx=1, pady=1)
 
-                # Get equipment data for this file from extracted data
-                equipment_rows = self.extracted_equipment_data.get(path, [])
+                # Get equipment data specifically for this file
+                equipment_for_this_file = self.extracted_equipment_data.get(path, {})
+            
                 
-                # If no extracted data, show placeholder rows
-                if not equipment_rows:
-                    equipment_rows = [
-                        {
-                            'equipment_no': '',
-                            'pmt_no': '',
-                            'description': '',
-                            'parts': '',
-                            'phase': '',
-                            'fluid': '',
-                            'type': '',
-                            'spec': '',
-                            'grade': '',
-                            'insulation': '',
-                            'design_temp': '',
-                            'design_pressure': '',
-                            'operating_temp': '',
-                            'operating_pressure': ''
-                        }
-                    ]
+                # Convert Equipment dictionary for this file to display rows
+                display_rows = []
+                row_counter = 0
+                
+                if equipment_for_this_file:
+                    for equipment in equipment_for_this_file.values():
+                        
+                        for component in equipment.components:
+                            display_rows.append({
+                                'row_no': str(row_counter + 1),
+                                'equipment_no': equipment.equipment_number,
+                                'pmt_no': equipment.pmt_number,
+                                'description': equipment.equipment_description,
+                                'parts': equipment.components[row_counter].component_name,
+                                'phase': equipment.components[row_counter].phase,
+                                'fluid': equipment.components[row_counter].get_existing_data_value('fluid') or '',
+                                'type': equipment.components[row_counter].get_existing_data_value('material_type') or '',
+                                'spec': equipment.components[row_counter].get_existing_data_value('spec') or '',
+                                'grade': equipment.components[row_counter].get_existing_data_value('grade') or '',
+                                'insulation': equipment.components[row_counter].get_existing_data_value('insulation') or '',
+                                'design_temp': equipment.components[row_counter].get_existing_data_value('design_temp') or '',
+                                'design_pressure': equipment.components[row_counter].get_existing_data_value('design_pressure') or '',
+                                'operating_temp': equipment.components[row_counter].get_existing_data_value('operating_temp') or '',
+                                'operating_pressure': equipment.components[row_counter].get_existing_data_value('operating_pressure') or '',
+                            })
+                            row_counter += 1
+                else:
+                    print(f"  No equipment data found for this file")
+                    # No equipment found for this file
+                    info_text = "No equipment data found for this file"
+                    if equipment_number:
+                        info_text = f"No equipment data found for '{equipment_number}'"
+                    
+                    info_label = ctk.CTkLabel(
+                        table_frame,
+                        text=info_text,
+                        font=("Segoe UI", 10),
+                        text_color=("gray50", "gray75"),
+                    )
+                    info_label.pack(pady=20)
+                    continue  # Skip creating rows for this file
 
-                # Create row for each equipment
-                for row_idx, equipment_data in enumerate(equipment_rows):
+                print(f"  Created {len(display_rows)} display rows")
+                
+                # Create row for each equipment/component
+                for row_data in display_rows:
                     row_frame = ctk.CTkFrame(table_frame, fg_color="transparent")
                     row_frame.pack(fill="x", padx=0, pady=1)
 
@@ -329,21 +404,21 @@ class NewWorkView:
 
                     # Column values in order matching columns list
                     col_values = [
-                        str(row_idx + 1),  # NO.
-                        equipment_data.get('equipment_no', ''),
-                        equipment_data.get('pmt_no', ''),
-                        equipment_data.get('description', ''),
-                        equipment_data.get('parts', ''),
-                        equipment_data.get('phase', ''),
-                        equipment_data.get('fluid', ''),
-                        equipment_data.get('type', ''),
-                        equipment_data.get('spec', ''),
-                        equipment_data.get('grade', ''),
-                        equipment_data.get('insulation', ''),
-                        equipment_data.get('design_temp', ''),
-                        equipment_data.get('design_pressure', ''),
-                        equipment_data.get('operating_temp', ''),
-                        equipment_data.get('operating_pressure', ''),
+                        row_data.get('row_no', ''),
+                        row_data.get('equipment_no', ''),
+                        row_data.get('pmt_no', ''),
+                        row_data.get('description', ''),
+                        row_data.get('parts', ''),
+                        row_data.get('phase', ''),
+                        row_data.get('fluid', ''),
+                        row_data.get('type', ''),
+                        row_data.get('spec', ''),
+                        row_data.get('grade', ''),
+                        row_data.get('insulation', ''),
+                        row_data.get('design_temp', ''),
+                        row_data.get('design_pressure', ''),
+                        row_data.get('operating_temp', ''),
+                        row_data.get('operating_pressure', ''),
                     ]
 
                     for col_idx, (col_name, col_width) in enumerate(columns):
@@ -370,48 +445,86 @@ class NewWorkView:
 
     def _start_extraction(self) -> None:
         """Entry point for starting extraction (to be wired to backend)."""
-        # TODO: Backend - Call extraction service with self.selected_files
-        # TODO: Backend - Call append_extraction_log() to send live status updates
-        # TODO: Backend - Call set_extracted_equipment_data() to populate table on Page 2
-        # TODO: Backend - Call set_progress() to update progress bar
         if not self.selected_files:
-            from tkinter import messagebox
             messagebox.showwarning("No Files", "Please select files first.")
             return
-
         # Show loading overlay
         if hasattr(self.controller, 'show_loading'):
             self.controller.show_loading("Starting extraction...", show_progress=True)
-
         # Update progress bar
         self.set_progress(0.0, "Initializing extraction...")
+
+        self._masterfile_extraction()
 
         # TODO: Backend - Call extraction service and save results to Excel/database
         # Example (to be implemented in controller/backend):
         # self.controller.start_extraction(self.selected_files, self)
         
-        # Simulate extraction progress (remove when backend is integrated)
-        self._simulate_extraction()
+        
+        #self._simulate_extraction()
 
-    def _simulate_extraction(self) -> None:
-        """Simulate extraction progress (for UI testing only)."""
-        import threading
-        import time
-
+    def _masterfile_extraction(self) -> None:
         def extraction_thread():
+            # Load masterfile data
+            if self.extractor is None:
+                self.extractor = MasterfileExtractor(log_callback=self.log_callback)
+            if self.excel_manager is None:
+                self.excel_manager = ExcelManager(self.get_work_excel_path(), log_callback=self.log_callback)
+            self.equipment_map = self.excel_manager.read_masterfile()
+            
             total_files = len(self.selected_files)
-            for idx, file_path in enumerate(self.selected_files):
-                progress = (idx + 1) / total_files
-                status = f"Processing {idx + 1}/{total_files}: {os.path.basename(file_path)}"
-                
-                self.parent.after(0, lambda p=progress, s=status: self.set_progress(p, s))
-                self.parent.after(0, lambda f=file_path: self.append_extraction_log(f"▶ Processing: {os.path.basename(f)}"))
+            if total_files < 2 :
+                status = f"Processing 1 file {os.path.basename(self.selected_files[0])}"
+                self.parent.after(0, lambda p=0.0, s=status: self.set_progress(p, s))
+                self.parent.after(0, lambda f=self.selected_files[0]: self.append_extraction_log(f"▶ Processing: {os.path.basename(f)}"))
                 
                 if hasattr(self.controller, 'update_loading_progress'):
-                    self.parent.after(0, lambda p=progress, s=status: self.controller.update_loading_progress(p, s))
+                    self.parent.after(0, lambda p=1.0, s=status: self.controller.update_loading_progress(p, s))
+
+                # Get equipment number from image path
+                filename = self.selected_files[0]
                 
-                time.sleep(1)  # Simulate processing time
-                self.parent.after(0, lambda f=file_path: self.append_extraction_log(f"✓ Completed: {os.path.basename(f)}"))
+                if filename in self.equipment_map:
+                    # Extract data for this specific equipment only
+                    extracted_equipment = self.extractor.process_and_update_single_equipment(
+                        self.equipment_map, 
+                        self.selected_files[0], 
+                        self.converted_images_dir
+                    )
+                    
+                    # Store ONLY this equipment for this file
+                    file_specific_data = {filename: extracted_equipment[self.selected_files[0]]}
+                    self.set_extracted_equipment_data(self.selected_files[0], file_specific_data)
+                else:
+                    # No equipment found for this file
+                    self.set_extracted_equipment_data(self.selected_files[0], {})
+                    self.append_extraction_log(f"⚠️ No equipment found for file: {os.path.basename(self.selected_files[0])}")
+
+            else:
+                for idx, file_path in enumerate(self.selected_files):
+                    progress = (idx + 1) / total_files
+                    status = f"Processing {idx + 1}/{total_files}: {os.path.basename(file_path)}"
+                    equipment_number = get_equipment_number_from_image_path(file_path)
+                    
+                    self.parent.after(0, lambda p=progress, s=status: self.set_progress(p, s))
+                    self.parent.after(0, lambda f=file_path: self.append_extraction_log(f"▶ Processing: {os.path.basename(f)}"))
+                    
+                    if hasattr(self.controller, 'update_loading_progress'):
+                        self.parent.after(0, lambda p=progress, s=status: self.controller.update_loading_progress(p, s))
+                    
+                    if equipment_number in self.equipment_map:
+                        # Extract data for this specific equipment
+                        extracted_data = self.extractor.process_and_update_specific_equipment(self.equipment_map, equipment_number)
+                        
+                        # Store ONLY this equipment for this file
+                        file_specific_data = {equipment_number: extracted_data[equipment_number]}
+                        self.set_extracted_equipment_data(file_path, file_specific_data)
+                    else:
+                        # No equipment found for this file
+                        self.set_extracted_equipment_data(file_path, {})
+                        self.append_extraction_log(f"⚠️ No equipment '{equipment_number}' found for file: {os.path.basename(file_path)}")
+
+                    self.parent.after(0, lambda f=file_path: self.append_extraction_log(f"✓ Completed: {os.path.basename(f)}"))
 
             # Complete extraction
             self.parent.after(0, lambda: self.set_progress(1.0, "Extraction complete!"))
@@ -427,7 +540,7 @@ class NewWorkView:
                     "success",
                     5000
                 ))
-
+        
         thread = threading.Thread(target=extraction_thread, daemon=True)
         thread.start()
 
@@ -461,9 +574,6 @@ class NewWorkView:
         # self.controller.save_edited_data_to_excel(edited_data)
         
         # Simulate save (remove when backend is integrated)
-        import threading
-        import time
-
         def save_thread():
             time.sleep(1)  # Simulate save time
             self.parent.after(0, lambda: self.controller.hide_loading() if hasattr(self.controller, 'hide_loading') else None)
@@ -642,10 +752,10 @@ class NewWorkView:
         # Browse GA Files button
         ga_browse_btn = ctk.CTkButton(
             button_row,
-            text="📁 Browse GA Files",
+            text="📁 Browse GA Files (PDF)",
             command=lambda: self._select_files(self.file_mode.get().lower()),
             height=32,
-            width=130,
+            width=150,
             font=("Segoe UI", 10),
         )
         ga_browse_btn.pack(side="left", padx=(0, 8))
@@ -653,7 +763,7 @@ class NewWorkView:
         # File mode selector
         mode_label = ctk.CTkLabel(
             button_row,
-            text="GA Mode:",
+            text="Mode:",
             font=("Segoe UI", 9),
             text_color=("gray50", "gray70"),
         )
@@ -662,7 +772,7 @@ class NewWorkView:
         self.file_mode = ctk.StringVar(value="single")
         mode_switch = ctk.CTkSegmentedButton(
             button_row,
-            values=["Single", "Multiple"],
+            values=["Single", "Multiple", "Folder"],
             variable=self.file_mode,
             font=("Segoe UI", 9),
             height=28,
@@ -894,3 +1004,58 @@ class NewWorkView:
 
         # Rebuild per-file editable sections with extracted data
         self._rebuild_extracted_data_page_2()
+
+    def _find_pdf_files_in_folder(self, folder_path: str) -> List[str]:
+            """Find all PDF files in a folder."""
+            pdf_files = []
+            for root, _, files in os.walk(folder_path):
+                for file in files:
+                    if file.lower().endswith('.pdf'):
+                        pdf_files.append(os.path.join(root, file))
+            return pdf_files
+
+    def _convert_pdf_to_images(self, pdf_paths: List[str]) -> List[str]:
+            """Convert PDF files to images and return image paths."""
+            try:
+                # Initialize converter if not already done
+                if self.pdf_converter is None:
+                    self.pdf_converter = PDFToImageConverter()
+                    
+                    # Set up conversion directory in work folder
+                    work_id = self.controller.current_work.get("id") if self.controller.current_work else None
+                    if work_id:
+                        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+                        self.converted_images_dir = os.path.join(
+                            project_root, "src", "output_files", work_id, "converted_images"
+                        )
+                        self.pdf_converter.output_folder = self.converted_images_dir
+                
+                # Convert each PDF
+                all_converted_images = []
+                for pdf_path in pdf_paths:
+                    if not os.path.exists(pdf_path):
+                        self.append_extraction_log(f"⚠️ PDF not found: {os.path.basename(pdf_path)}")
+                        continue
+                    
+                    filename = os.path.basename(pdf_path)
+                    self.append_extraction_log(f"📄 Converting PDF to images: {filename}")
+                    
+                    # Convert PDF to images
+                    image_paths = self.pdf_converter.convert_single(pdf_path)
+                    
+                    if image_paths:
+                        for img_path in image_paths:
+                            equip_no = get_equipment_number_from_image_path(img_path)
+                            self.append_extraction_log(f"    - Generated image for Equipment No.: {equip_no}")
+                            all_converted_images.append(equip_no)
+                        self.append_extraction_log(f"  ✅ Created {len(image_paths)} image(s) from {filename}")
+                    else:
+                        self.append_extraction_log(f"  ❌ Failed to convert {filename}")
+                
+                return all_converted_images
+                
+            except Exception as e:
+                error_msg = f"Error converting PDFs to images: {str(e)}"
+                self.append_extraction_log(f"❌ {error_msg}")
+                messagebox.showerror("Conversion Error", error_msg)
+                return []

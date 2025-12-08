@@ -10,11 +10,12 @@ import os
 logger = logging.getLogger(__name__)
 
 class ExcelManager:
-    def __init__(self, file_path: str):
+    def __init__(self, file_path: str, log_callback=None):
         self.file_path = file_path
         self.wb = load_workbook(file_path)
         self.equipment_map: Dict[str, Equipment] = {}
-        self.default_path = "src\output_files"
+        self.default_path = "src\\output_files"
+        self.log_callback = log_callback
     
     def read_masterfile(self) -> Dict[str, Equipment]:
         """
@@ -43,7 +44,7 @@ class ExcelManager:
                     equipment_description=self._get_cell_value(ws, f'D{current_row}'),
                     row_index=current_row
                 )
-                logger.info(f"Found equipment: {equipment_number}")
+                self.log_info(f"Found equipment: {equipment_number}")
             
             if current_equipment and component_name and component_name not in ['COMPONENTS', '']:
                 # Create and add component information
@@ -64,7 +65,7 @@ class ExcelManager:
                     }
                 )
                 current_equipment.add_component(component_data)
-                logger.info(f"  - Component: {component_name} (row {current_row})")
+                self.log_info(f"  - Component: {component_name} (row {current_row})")
             
             current_row += 1
         
@@ -74,7 +75,7 @@ class ExcelManager:
         
         self.equipment_map = equipment_map
         total_components = sum(len(eq.components) for eq in equipment_map.values())
-        logger.info(f"📖 Read {len(equipment_map)} equipment items with {total_components} total components")
+        self.log_info(f"📖 Read {len(equipment_map)} equipment items with {total_components} total components")
         return equipment_map
     
     # Updated methods to work with dictionary
@@ -97,20 +98,20 @@ class ExcelManager:
         """
         equipment = self.equipment_map.get(equipment_number)
         if not equipment:
-            logger.warning(f"Equipment not found: {equipment_number}")
+            self.log_warning(f"Equipment not found: {equipment_number}")
             return False
         
         component = equipment.get_component(component_name)
         if not component:
-            logger.warning(f"Component not found: {equipment_number} - {component_name}")
+            self.log_warning(f"Component not found: {equipment_number} - {component_name}")
             return False
         
         try:
             component.update_existing_data(updates)
-            logger.info(f"Updated {equipment_number} - {component_name}: {updates}")
+            self.log_info(f"Updated {equipment_number} - {component_name}: {updates}")
             return True
         except KeyError as e:
-            logger.error(f"Invalid data field {e} for {equipment_number} - {component_name}")
+            self.log_error(f"Invalid data field {e} for {equipment_number} - {component_name}")
             return False
     
     def fill_empty_cells(self, equipment_number: str, component_name: str, default_values: Dict[str, any]) -> bool:
@@ -134,7 +135,7 @@ class ExcelManager:
         
         if updates:
             component.update_existing_data(updates)
-            logger.info(f"Filled empty fields for {equipment_number} - {component_name}: {updates}")
+            self.log_info(f"Filled empty fields for {equipment_number} - {component_name}: {updates}")
             return True
         return False
     
@@ -144,11 +145,11 @@ class ExcelManager:
         Returns False if equipment with same number already exists
         """
         if equipment.equipment_number in self.equipment_map:
-            logger.warning(f"Equipment already exists: {equipment.equipment_number}")
+            self.log_warning(f"Equipment already exists: {equipment.equipment_number}")
             return False
         
         self.equipment_map[equipment.equipment_number] = equipment
-        logger.info(f"Added new equipment: {equipment.equipment_number}")
+        self.log_info(f"Added new equipment: {equipment.equipment_number}")
         return True
     
     def remove_equipment(self, equipment_number: str) -> bool:
@@ -158,7 +159,7 @@ class ExcelManager:
         """
         if equipment_number in self.equipment_map:
             del self.equipment_map[equipment_number]
-            logger.info(f"Removed equipment: {equipment_number}")
+            self.log_info(f"Removed equipment: {equipment_number}")
             return True
         return False
     
@@ -212,11 +213,56 @@ class ExcelManager:
                 output_path = os.path.join(self.default_path, path, f"{user_id}_{base_name}_modified{ext}")
             # Save the workbook
             self.wb.save(output_path)
-            logger.info(f"✅ Excel file saved successfully: {output_path}")
+            self.log_info(f"✅ Excel file saved successfully: {output_path}")
             return True
             
         except Exception as e:
-            logger.error(f"❌ Error saving Excel file: {e}")
+            self.log_error(f"❌ Error saving Excel file: {e}")
+            return False
+    
+    def save_to_excel_with_dict(self, equipment_dict: Dict[str, Equipment], user_id: Optional[int] = None) -> bool:
+        """
+        Save equipment dictionary data back to Excel file
+        """
+        try:
+            ws = self.wb['Masterfile']
+            
+            for equipment in equipment_dict.values():
+                for component in equipment.components:
+                    if hasattr(component, 'row_index') and component.row_index:
+                        row = component.row_index
+                        # Update component data in Excel
+                        ws[f'G{row}'] = component.get_existing_data_value('fluid')
+                        ws[f'H{row}'] = component.get_existing_data_value('material_type')
+                        ws[f'I{row}'] = component.get_existing_data_value('spec')
+                        ws[f'J{row}'] = component.get_existing_data_value('grade')
+                        ws[f'K{row}'] = component.get_existing_data_value('insulation')
+                        ws[f'L{row}'] = component.get_existing_data_value('design_temp')
+                        ws[f'M{row}'] = component.get_existing_data_value('design_pressure')
+                        ws[f'N{row}'] = component.get_existing_data_value('operating_temp')
+                        ws[f'O{row}'] = component.get_existing_data_value('operating_pressure')
+            
+            # Determine output path
+            if user_id is None:
+                os.makedirs(os.path.join(self.default_path, "default", "excel"), exist_ok=True)
+                base, ext = os.path.splitext(self.file_path)
+                path, base_name = os.path.split(base)
+                path = "default\\excel"
+                output_path = os.path.join(self.default_path, path, f"{base_name}_modified{ext}")
+            else:
+                os.makedirs(os.path.join(self.default_path, f"user_{user_id}", "excel"), exist_ok=True)
+                base, ext = os.path.splitext(self.file_path)
+                path, base_name = os.path.split(base)
+                path = f"user_{user_id}\\excel"
+                output_path = os.path.join(self.default_path, path, f"{user_id}_{base_name}_modified{ext}")
+            
+            # Save the workbook
+            self.wb.save(output_path)
+            self.log_info(f"✅ Excel file saved successfully from dict: {output_path}")
+            return True
+            
+        except Exception as e:
+            self.log_error(f"❌ Error saving Excel file from dict: {e}")
             return False
     
     def _get_cell_value(self, ws, cell_ref):
@@ -231,6 +277,24 @@ class ExcelManager:
         import json
         equipment_list = [eq.to_dict() for eq in self.equipment_map.values()]
         return json.dumps(equipment_list, indent=2)
+    
+    def log_info(self, message: str) -> None:
+        """Log info message to both console and UI"""
+        logger.info(message)
+        if self.log_callback:
+            self.log_callback(f"ℹ️ {message}")
+
+    def log_warning(self, message: str) -> None:
+        """Log warning message to both console and UI"""
+        logger.warning(message)
+        if self.log_callback:
+            self.log_callback(f"⚠️ {message}")
+
+    def log_error(self, message: str) -> None:
+        """Log error message to both console and UI"""
+        logger.error(message)
+        if self.log_callback:
+            self.log_callback(f"❌ {message}")
 
 
 if __name__ == "__main__":
@@ -244,6 +308,8 @@ if __name__ == "__main__":
         print(f"Key: {equipment_number} -> {equipment}")
         for component in equipment.components:
             print(f"  - {component}")
+            for key, value in component.existing_data.items():
+                print(f"      {key}: {value}")
     
     #lookups
     specific_equipment = extractor.get_equipment("V-001")
@@ -264,6 +330,6 @@ if __name__ == "__main__":
     )
     
     # Save modified file
-    extractor.save_to_excel()
+    #extractor.save_to_excel()
     #Save with user ID
     #extractor.save_to_excel(user_id=123)

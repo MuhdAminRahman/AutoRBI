@@ -7,8 +7,9 @@ logger = logging.getLogger(__name__)
 class ResponseParser:
     """Handles parsing of AI responses"""
     
-    def __init__(self, extraction_rules):
+    def __init__(self, extraction_rules, log_callback=None):
         self.rules = extraction_rules
+        self.log_callback = log_callback
     
     def parse_response(self, response_text: str, expected_components: List[Component], equipment_number: str) -> Dict[str, List[Dict[str, any]]]:
         """Parse the AI response into structured data"""
@@ -76,17 +77,17 @@ class ResponseParser:
         
         # Log extraction results
         extracted_fields = [k for k,v in components_data[0].items() if v != 'NOT_FOUND'] if components_data else []
-        logger.info(f"✅ Extracted data for {equipment_number}: {', '.join(extracted_fields)}")
+        self.log_info(f"✅ Extracted data for {equipment_number}: {', '.join(extracted_fields)}")
         not_extracted_fields = [k for k,v in components_data[0].items() if v == 'NOT_FOUND' or v == ""] if components_data else []
         if equipment_number in self.rules.INSULATION_ONLY_EQUIPMENT:
             # For insulation-only equipment, only log insulation field
             not_extracted_fields = [f for f in not_extracted_fields if f == 'insulation']
             if not_extracted_fields:
-                logger.info(f"⚠️ Missing data for {equipment_number}: {', '.join(not_extracted_fields)}")
+                self.log_info(f"⚠️ Missing data for {equipment_number}: {', '.join(not_extracted_fields)}")
 
         else:
             if not_extracted_fields:
-                logger.info(f"⚠️ Missing data for {equipment_number}: {', '.join(not_extracted_fields)}")
+                self.log_info(f"⚠️ Missing data for {equipment_number}: {', '.join(not_extracted_fields)}")
         
         return {'components_data': components_data}
     
@@ -106,3 +107,8 @@ class ResponseParser:
                     'operating_temperature': 'NOT_FOUND',
                     'operating_pressure': 'NOT_FOUND'
                 })
+    def log_info(self, message: str) -> None:
+        """Log info message to both console and UI"""
+        logger.info(message)
+        if self.log_callback:
+            self.log_callback(f"ℹ️ {message}")

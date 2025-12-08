@@ -40,7 +40,7 @@ def test_DataExtractor():
     try:
         # Step 1: Load equipment data from Excel
         print("\n1. 📊 Loading equipment data from Excel...")
-        excel_manager = ExcelManager("CaseStudy1Resources\MasterFile _ IPETRO PLANT.xlsx")
+        excel_manager = ExcelManager("CaseStudy1Resources\\MasterFile _ IPETRO PLANT.xlsx")
         equipment_map = excel_manager.read_masterfile()
         
         print(f"✅ Loaded {len(equipment_map)} equipment items")
