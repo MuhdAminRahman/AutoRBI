@@ -161,7 +161,7 @@ def get_equipment_number_from_image_path(image_path: str) -> str:
     if len(segments) < 2:
         return ""
     equipment_part = segments[1]  # e.g. H-001
-    return equipment_part.strip()
+    return equipment_part.strip().replace(' ', '')
     
 if __name__ == "__main__":
     # Example usage

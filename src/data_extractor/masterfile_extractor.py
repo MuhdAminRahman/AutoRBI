@@ -20,6 +20,7 @@ class MasterfileExtractor:
     
     def __init__(self,no_expected_value=None, log_callback=None):
         load_dotenv()
+        self.log_callback = log_callback
         self.client = Anthropic()
         self.max_retries = 5
         self.base_delay = 1
@@ -29,9 +30,9 @@ class MasterfileExtractor:
         else:
             self.rules = ExtractionRules()
         self.prompt_builder = PromptBuilder()
-        self.response_parser = ResponseParser(self.rules, log_callback=log_callback)
-        self.data_updater = DataUpdater(self.rules, log_callback=log_callback)
-        self.log_callback = log_callback
+        self.response_parser = ResponseParser(self.rules, log_callback=self.log_callback)
+        self.data_updater = DataUpdater(self.rules, log_callback=self.log_callback)
+        
     
     def extract_technical_data(self, image_path: str, equipment: Equipment) -> Dict[str, List[Dict[str, any]]]:
         """Extract technical data from image"""
@@ -116,6 +117,8 @@ class MasterfileExtractor:
         elif specific_equipment_number_list != {}:
             for equipment_number in specific_equipment_number_list:
                 if equipment_number in equipment_map:
+                    if only_missing and equipment_number not in self.data_updater.missing_equipment:
+                        continue
                     equipment = equipment_map[equipment_number]
                     extracted_data.update(self._process_single_equipment(equipment_number, equipment, work_path))
         else:
@@ -180,32 +183,30 @@ class MasterfileExtractor:
         
         return equipment_map
     
-    def process_and_update_specific_equipment(self, equipment_map: Dict[str, Equipment], equipment_numbers: List[str]) -> Dict[str, Equipment]:
+    def process_and_update_specific_equipment(self, equipment_map: Dict[str, Equipment], equipment_numbers: List[str], work_path: str = "converted_to_image") -> Dict[str, Equipment]:
         """Process and update specific equipment by their numbers"""
         self.log_info("🚀 Starting specific equipment data extraction...")
         
         retry_count = 0
         while retry_count < self.max_retries:
-            self.log_info(f"\n📋 Extraction attempt {retry_count + 1} for specified equipment...")
-            extracted_data = {}
-            
-            for eq_num in equipment_numbers:
-                if eq_num in equipment_map:
-                    equipment = equipment_map[eq_num]
-                    extracted_data.update(self._process_single_equipment(eq_num, equipment))
-                else:
-                    self.log_warning(f"❌ Equipment number {eq_num} not found in equipment map")
-            
+            if retry_count == 0:
+                self.log_info(f"\n📋 Initial extraction (attempt {retry_count + 1})...")
+                extracted_data = self.process_equipment_images(equipment_map, only_missing=False, work_path=work_path, specific_equipment_number_list=equipment_numbers)
+            else:
+                self.log_info(f"\n🔄 Retry {retry_count} for equipment {equipment_numbers}...")
+                extracted_data = self.process_equipment_images(equipment_map, only_missing=True, work_path=work_path, specific_equipment_number_list=equipment_numbers)
             # Update equipment with extracted data
             self.update_equipment_with_extracted_data(equipment_map, extracted_data)
-            
             # Check if we're done
-            all_updated = all(eq_num not in self.data_updater.missing_equipment for eq_num in equipment_numbers)
-            if all_updated:
-                self.log_info(f"✅ All specified equipment have complete data after {retry_count + 1} attempt(s)")
+            if not self.data_updater.missing_equipment:
+                self.log_info(f"✅ All equipment have complete data after {retry_count + 1} attempt(s)")
                 break
-            
             retry_count += 1
+        
+        if self.data_updater.missing_equipment:
+            self.log_warning(f"⚠️ {len(self.data_updater.missing_equipment)} equipment still missing data after {retry_count} retries:")
+            for eq_num in self.data_updater.missing_equipment:
+                self.log_warning(f"  - {eq_num}")
 
         
         return equipment_map
