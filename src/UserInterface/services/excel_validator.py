@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
+from models import Equipment
 import os
 from typing import Optional, Set, Tuple
 
@@ -27,12 +28,12 @@ class ExcelValidator:
     def __init__(self, project_root: str):
         self.project_root = project_root
     
-    def get_excel_file_info(self, work_id: str) -> ExcelFileInfo:
+    def get_excel_file_info(self, workpathname: str) -> ExcelFileInfo:
         """
         Get information about Excel file for a work.
         Checks both default and updated locations.
         """
-        base_path = os.path.join(self.project_root, "src", "output_files", work_id, "excel")
+        base_path = os.path.join(self.project_root, "src", "output_files", workpathname, "excel")
         
         # Check for updated file first (work in progress)
         updated_path = os.path.join(base_path, "updated")
@@ -71,15 +72,31 @@ class ExcelValidator:
         )
     
     def _find_excel_file(self, directory: str) -> Optional[str]:
-        """Find Excel file in directory"""
+        """Find the latest Excel file in directory"""
         if not os.path.isdir(directory):
             return None
         
+        excel_files = []
+        
         for fname in os.listdir(directory):
             if fname.lower().endswith(('.xlsx', '.xls')):
-                return os.path.join(directory, fname)
+                file_path = os.path.join(directory, fname)
+                try:
+                    # Get modification time
+                    mtime = os.path.getmtime(file_path)
+                    excel_files.append((mtime, file_path, fname))
+                except (OSError, IOError):
+                    # If we can't get file info, skip it
+                    continue
         
-        return None
+        if not excel_files:
+            return None
+        
+        # Sort by modification time (newest first)
+        excel_files.sort(reverse=True, key=lambda x: x[0])
+        
+        # Return the path of the most recent file
+        return excel_files[0][1]
     
     def _get_equipment_with_work(self, excel_path: str) -> Set[str]:
         """
@@ -103,18 +120,18 @@ class ExcelValidator:
         
         return equipment_with_work
     
-    def _has_completed_work(self, equipment) -> bool:
+    def _has_completed_work(self, equipment: Equipment) -> bool:
         """Check if equipment has any completed work"""
+        critical_fields = equipment.components[0].existing_data.keys()
         for component in equipment.components:
-            # Check if critical fields are filled
-            critical_fields = ['fluid', 'type', 'spec', 'grade']
-            filled_count = sum(
-                1 for field in critical_fields
-                if component.get_existing_data_value(field)
+            # Check if ALL critical fields are filled
+            all_filled = all(
+                component.get_existing_data_value(field)
+                for field in critical_fields
             )
             
-            # If at least 2 critical fields are filled, consider it as work done
-            if filled_count >= 2:
+            # If all critical fields are filled, consider it as work done
+            if all_filled:
                 return True
         
         return False

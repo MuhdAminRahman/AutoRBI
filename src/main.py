@@ -1,7 +1,5 @@
 """Main entry point for AutoRBI application."""
 import logging
-from data_extractor import MasterfileExtractor
-from excel_manager import ExcelManager
 from app import AutoRBIApp
 
 def setup_logging():

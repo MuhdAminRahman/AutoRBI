@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from database.models import User
+from AutoRBI_Database.database.models import User
 from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")

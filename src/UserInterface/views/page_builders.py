@@ -141,16 +141,16 @@ class Page1Builder(PageBuilderBase):
         
         # Get work names
         work_names = [
-            w.get("name", w.get("id", "Unknown")) 
+            w.get("work_name", w.get("work_id", "Unknown")) 
             for w in self.view.controller.available_works
         ]
         
         # Find current work index
         current_index = 0
         if self.view.controller.current_work:
-            current_id = self.view.controller.current_work.get("id")
+            current_id = self.view.controller.current_work.get("work_id")
             for idx, work in enumerate(self.view.controller.available_works):
-                if work.get("id") == current_id:
+                if work.get("work_id") == current_id:
                     current_index = idx
                     break
         
@@ -205,18 +205,18 @@ class Page1Builder(PageBuilderBase):
         button_row.grid(row=1, column=0, columnspan=3, sticky="ew")
         
         # Check if Excel exists
-        work_id = self.view.controller.current_work.get("id") if self.view.controller.current_work else None
+        workpath = self.view.controller.current_work.get("work_name") if self.view.controller.current_work else None
         excel_exists = self.view.file_service.get_work_excel_path(
-            work_id, 
+            workpath, 
             self.view.project_root
-        ) is not None if work_id else False
+        ) is not None if workpath else False
         
         # Upload Excel button (only if no Excel exists)
         if not excel_exists:
             excel_btn = ctk.CTkButton(
                 button_row,
                 text="📋 Upload Excel",
-                command=lambda: self.view.upload_excel_for_work(),
+                command=lambda: self.view.upload_default_excel(),
                 height=Sizes.BUTTON_HEIGHT_SM,
                 width=120,
                 font=Fonts.SUBTITLE,

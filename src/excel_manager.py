@@ -5,6 +5,7 @@ import logging
 from typing import List, Dict, Optional
 from models import Equipment, Component
 import os
+import re
 
 
 
@@ -18,6 +19,7 @@ class ExcelManager:
         self.equipment_map: Dict[str, Equipment] = {}
         self.default_path = "src\\output_files"
         self.log_callback = log_callback
+        self.basefilename = None
     
     def load_workbook(self):
         """Explicitly load the workbook when needed"""
@@ -195,7 +197,7 @@ class ExcelManager:
                     components.append(component)
         return components
     
-    def save_to_excel(self, user_id: Optional[int] = None) -> bool:
+    def save_to_excel(self, work_id: Optional[int] = None) -> bool:
         """
         Save the modified data back to Excel file
         """
@@ -219,18 +221,18 @@ class ExcelManager:
                         ws[f'O{row}'] = component.get_existing_data_value('operating_pressure')
             
             # Determine output path
-            if user_id is None:
+            if work_id is None:
                 os.makedirs(os.path.join(self.default_path, "default", "excel"), exist_ok=True)
                 base, ext = os.path.splitext(self.file_path)
                 path, base_name = os.path.split(base)
                 path = "default\\excel"
                 output_path = os.path.join(self.default_path,path, f"{base_name}_modified{ext}")
             else:
-                os.makedirs(os.path.join(self.default_path, f"user_{user_id}", "excel"), exist_ok=True)
+                os.makedirs(os.path.join(self.default_path, f"user_{work_id}", "excel"), exist_ok=True)
                 base, ext = os.path.splitext(self.file_path)
                 path, base_name = os.path.split(base)
-                path = f"user_{user_id}\\excel"
-                output_path = os.path.join(self.default_path, path, f"{user_id}_{base_name}_modified{ext}")
+                path = f"{work_id}\\excel"
+                output_path = os.path.join(self.default_path, path, f"{work_id}_{base_name}_modified{ext}")
             # Save the workbook
             self.wb.save(output_path)
             self.log_info(f"✅ Excel file saved successfully: {output_path}")
@@ -246,9 +248,11 @@ class ExcelManager:
 
     def add_timestamp(self, original_filename):
         # Get the current date and time
+        timestamp_pattern = r"_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}"
+        new_base_name = re.sub(timestamp_pattern, '', original_filename)
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         # Construct the new filename
-        new_filename = f"{original_filename}_{timestamp}"
+        new_filename = f"{new_base_name}_{timestamp}"
         
         return new_filename
 

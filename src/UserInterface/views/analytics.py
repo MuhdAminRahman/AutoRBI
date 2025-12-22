@@ -1,52 +1,95 @@
-"""Analytics Dashboard view for AutoRBI application (CustomTkinter)."""
+"""Analytics Dashboard view with database integration."""
 
 from typing import Optional, Dict, Any
 import customtkinter as ctk
+from UserInterface.services.database_service import DatabaseService
 
 
 class AnalyticsView:
-    """Handles the Analytics Dashboard interface."""
+    """Handles the Analytics Dashboard interface with real-time database data."""
 
     def __init__(self, parent: ctk.CTk, controller):
         self.parent = parent
         self.controller = controller
         self.current_period: str = "all_time"
         self.kpi_cards: Dict[str, ctk.CTkFrame] = {}
+        self.kpi_value_labels: Dict[str, ctk.CTkLabel] = {}
 
     def update_metrics(self, metrics: Dict[str, Any]) -> None:
-        """Update KPI cards with new metric values.
-        
-        metrics dict can contain keys like:
-        {"total_works": int, "success_rate": float, "avg_time": float, "total_files": int}
-        
-        # TODO: Backend - Query analytics database for metrics
-        # TODO: Backend - Calculate KPIs: total works, success rate, avg extraction time
-        # TODO: Backend - Aggregate equipment and component statistics
-        # TODO: Backend - Support time period filtering (daily, weekly, monthly, all-time)
         """
-        if "total_works" in metrics and "total_works_card" in self.kpi_cards:
-            card = self.kpi_cards["total_works_card"]
-            for widget in card.winfo_children():
-                if isinstance(widget, ctk.CTkLabel) and widget.cget("font")[0] == "Segoe UI" and widget.cget("font")[1] == 20:
-                    widget.configure(text=str(metrics["total_works"]))
+        Update KPI cards with new metric values from database.
         
-        if "success_rate" in metrics and "success_rate_card" in self.kpi_cards:
-            card = self.kpi_cards["success_rate_card"]
-            for widget in card.winfo_children():
-                if isinstance(widget, ctk.CTkLabel) and widget.cget("font")[0] == "Segoe UI" and widget.cget("font")[1] == 20:
-                    widget.configure(text=f"{metrics['success_rate']:.1f}%")
+        Args:
+            metrics: Dictionary with keys:
+                - total_works: int
+                - success_rate: float
+                - total_files: int
+                - total_equipment: int
+                - extracted_equipment: int
+        """
+        # Update total works
+        if "total_works" in metrics and "total_works_value" in self.kpi_value_labels:
+            self.kpi_value_labels["total_works_value"].configure(
+                text=str(metrics["total_works"])
+            )
         
-        # TODO: Backend - Update other cards similarly
+        # Update success rate
+        if "success_rate" in metrics and "success_rate_value" in self.kpi_value_labels:
+            self.kpi_value_labels["success_rate_value"].configure(
+                text=f"{metrics['success_rate']:.1f}%"
+            )
+        
+        # Update total files
+        if "total_files" in metrics and "total_files_value" in self.kpi_value_labels:
+            self.kpi_value_labels["total_files_value"].configure(
+                text=str(metrics["total_files"])
+            )
+        
+        # Update total equipment (if card exists)
+        if "total_equipment" in metrics and "total_equipment_value" in self.kpi_value_labels:
+            self.kpi_value_labels["total_equipment_value"].configure(
+                text=str(metrics["total_equipment"])
+            )
 
     def _change_period(self, period: str) -> None:
-        """Change analytics time period (button-based, no input fields)."""
-        # TODO: Backend - Query analytics for selected time period
-        # TODO: Backend - Calculate metrics for the period (daily, weekly, monthly, all-time)
-        # TODO: Backend - Return updated KPI values
+        """Change analytics time period and refresh data."""
         self.current_period = period
-        # self.controller.load_analytics(period)
+        self._refresh_analytics_data()
 
-    def _create_kpi_card(self, parent: ctk.CTkFrame, title: str, value: str, key: str, row: int, col: int) -> None:
+    def _refresh_analytics_data(self) -> None:
+        """Fetch latest analytics data from database and update UI."""
+        try:
+            # Fetch analytics summary from database
+            analytics = DatabaseService.get_analytics_summary()
+            
+            # Update KPI cards
+            self.update_metrics(analytics)
+            
+            # Update recent activity summary if available
+            if hasattr(self, 'summary_content') and analytics.get('recent_activity'):
+                recent = analytics['recent_activity'][:3]  # Show top 3
+                
+                summary_text = "Recent Activity:\n"
+                for activity in recent:
+                    action = activity['action_type'].replace('_', ' ').title()
+                    timestamp = activity['timestamp'].strftime('%Y-%m-%d %H:%M')
+                    summary_text += f"• {action} - {timestamp}\n"
+                
+                if self.summary_content.winfo_exists():
+                    self.summary_content.configure(text=summary_text)
+                    
+        except Exception as e:
+            print(f"Error refreshing analytics: {e}")
+
+    def _create_kpi_card(
+        self, 
+        parent: ctk.CTkFrame, 
+        title: str, 
+        value: str, 
+        key: str, 
+        row: int, 
+        col: int
+    ) -> None:
         """Create a KPI metric card."""
         card = ctk.CTkFrame(
             parent,
@@ -71,10 +114,12 @@ class AnalyticsView:
         )
         value_label.pack(pady=(0, 12))
 
+        # Store references
         self.kpi_cards[key] = card
+        self.kpi_value_labels[f"{key}_value"] = value_label
 
     def show(self) -> None:
-        """Display the Analytics Dashboard interface."""
+        """Display the Analytics Dashboard interface with database data."""
         # Clear existing widgets
         for widget in self.parent.winfo_children():
             widget.destroy()
@@ -138,7 +183,7 @@ class AnalyticsView:
         )
         subtitle_label.grid(row=1, column=0, sticky="w", padx=24, pady=(0, 18))
 
-        # Period selector buttons (no input fields)
+        # Period selector buttons
         period_section = ctk.CTkFrame(main_frame, fg_color="transparent")
         period_section.grid(row=2, column=0, sticky="ew", padx=24, pady=(0, 18))
 
@@ -175,10 +220,11 @@ class AnalyticsView:
         kpi_section.grid_columnconfigure(2, weight=1)
         kpi_section.grid_columnconfigure(3, weight=1)
 
-        self._create_kpi_card(kpi_section, "Total Works", "0", "total_works_card", 0, 0)
-        self._create_kpi_card(kpi_section, "Success Rate", "0%", "success_rate_card", 0, 1)
-        self._create_kpi_card(kpi_section, "Avg Time", "0s", "avg_time_card", 0, 2)
-        self._create_kpi_card(kpi_section, "Total Files", "0", "total_files_card", 0, 3)
+        # Create KPI cards (will be populated with real data)
+        self._create_kpi_card(kpi_section, "Total Works", "0", "total_works", 0, 0)
+        self._create_kpi_card(kpi_section, "Success Rate", "0%", "success_rate", 0, 1)
+        self._create_kpi_card(kpi_section, "Total Equipment", "0", "total_equipment", 0, 2)
+        self._create_kpi_card(kpi_section, "Total Files", "0", "total_files", 0, 3)
 
         # Charts section (2 columns)
         charts_section = ctk.CTkFrame(main_frame, fg_color="transparent")
@@ -206,7 +252,7 @@ class AnalyticsView:
 
         chart1_placeholder = ctk.CTkLabel(
             chart1_card,
-            text="[Chart placeholder]\nTime series visualization\nwill be rendered here.",
+            text="[Chart visualization]\nComing soon",
             font=("Segoe UI", 10),
             text_color=("gray50", "gray70"),
             justify="center",
@@ -226,14 +272,14 @@ class AnalyticsView:
 
         chart2_title = ctk.CTkLabel(
             chart2_card,
-            text="Status Distribution",
+            text="Extraction Progress",
             font=("Segoe UI", 12, "bold"),
         )
         chart2_title.grid(row=0, column=0, sticky="w", padx=16, pady=(12, 8))
 
         chart2_placeholder = ctk.CTkLabel(
             chart2_card,
-            text="[Chart placeholder]\nPie/bar chart showing\nstatus breakdown.",
+            text="[Progress visualization]\nComing soon",
             font=("Segoe UI", 10),
             text_color=("gray50", "gray70"),
             justify="center",
@@ -256,12 +302,26 @@ class AnalyticsView:
         )
         summary_title.grid(row=0, column=0, sticky="w", padx=16, pady=(12, 8))
 
-        summary_content = ctk.CTkLabel(
+        self.summary_content = ctk.CTkLabel(
             summary_card,
-            text="• Most active day: N/A\n• Peak extraction time: N/A\n• Most processed file type: N/A",
+            text="Loading recent activity...",
             font=("Segoe UI", 10),
             text_color=("gray50", "gray70"),
             anchor="w",
             justify="left",
         )
-        summary_content.grid(row=1, column=0, sticky="w", padx=16, pady=(0, 16))
+        self.summary_content.grid(row=1, column=0, sticky="w", padx=16, pady=(0, 16))
+        
+        # Refresh button
+        refresh_btn = ctk.CTkButton(
+            main_frame,
+            text="🔄 Refresh Data",
+            command=self._refresh_analytics_data,
+            height=36,
+            font=("Segoe UI", 11),
+            width=150,
+        )
+        refresh_btn.grid(row=6, column=0, sticky="e", padx=24, pady=(0, 24))
+        
+        # Load initial data
+        self._refresh_analytics_data()
