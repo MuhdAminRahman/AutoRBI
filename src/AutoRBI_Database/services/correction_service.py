@@ -18,7 +18,7 @@ What it does (short):
 from datetime import datetime
 from sqlalchemy.orm import Session
 
-from database.crud import (
+from AutoRBI_Database.database.crud import (
     get_components_by_equipment,
     get_component_by_id,
     update_component,
@@ -26,7 +26,7 @@ from database.crud import (
     create_history,
     get_work_by_id,
 )
-from database.models import Component
+from AutoRBI_Database.database.models import Component
 
 
 # Fields we track per component (matches your model)

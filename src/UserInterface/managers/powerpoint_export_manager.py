@@ -71,6 +71,25 @@ class PowerPointExportManager:
         """Execute PowerPoint export in background thread"""
         try:
             success = self._generate_powerpoint(selected_equipment, filename)
+            if success:
+                # DATABASE INTEGRATION: Log PowerPoint generation
+                from AutoRBI_Database.database.session import SessionLocal
+                from UserInterface.services.database_service import DatabaseService
+                
+                db = SessionLocal()
+                try:
+                    work_id = int(self.controller.current_work.get("work_id"))
+                    user_id = self.controller.current_user.get("id")
+                    
+                    DatabaseService.log_work_history(
+                        db, work_id, user_id,
+                        action_type="generate_ppt",
+                        description=f"Generated PowerPoint with {len(selected_equipment)} equipment"
+                    )
+                except Exception as e:
+                    self.log_callback(f"⚠️ Could not log PPT generation: {e}")
+                finally:
+                    db.close()
             self.parent_window.after(0, self._show_export_result, success, len(selected_equipment))
             
         except Exception as e:
@@ -80,7 +99,8 @@ class PowerPointExportManager:
     def _generate_powerpoint(self, equipment_numbers: List[str], filename: str) -> bool:
         """Generate PowerPoint file"""
         # Get work ID
-        work_id = self.controller.current_work.get("id") if self.controller.current_work else None
+        work_id = self.controller.current_work.get("work_id") if self.controller.current_work else None
+        work_name = self.controller.current_work.get("work_name") if self.controller.current_work else None
         
         # Validate prerequisites
         is_valid, error_msg = self.service.validate_prerequisites(
@@ -100,7 +120,7 @@ class PowerPointExportManager:
             return False
         
         # Get output path
-        output_path = self.service.get_output_path(work_id, filename)
+        output_path = self.service.get_output_path(work_name, filename)
         if not output_path:
             return False
         

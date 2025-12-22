@@ -17,6 +17,7 @@ class ViewState:
     equipment_map: Dict[str, Equipment] = field(default_factory=dict)
     extracted_equipment_data: Dict[str, Dict[str, Equipment]] = field(default_factory=dict)
     file_to_textboxes: Dict[str, List] = field(default_factory=dict)
+    converted_files: List[str] = field(default_factory=list)
     
     # Processing state
     converted_images_dir: Optional[str] = None

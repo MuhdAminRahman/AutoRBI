@@ -159,12 +159,14 @@ class LoginView:
             #     messagebox.showerror("Login Failed", "Invalid username or password.")
             
             # For now, set default group (remove when backend is integrated)
-            self.controller.current_user["group"] = "Engineering"
-            self.controller.available_works = [
-                {"id": "W001", "name": "Work 1 - GA Drawing Analysis"},
-                {"id": "W002", "name": "Work 2 - Equipment Inspection"},
-                {"id": "W003", "name": "Work 3 - Component Verification"},
-            ]
+            self.controller.current_user = {
+            "id": 2,
+            "username": "John Doe",
+            "role": "Engineer",
+            "email": "john.doe@ipetro.com",
+            "group": None,  # Employee group/department set after login
+        }
+            self.controller.available_works = self.controller.getAssignedWorks()
             self.controller.current_work = self.controller.available_works[0] if self.controller.available_works else None
             self.controller.show_main_menu()
 
