@@ -1,4 +1,5 @@
 # excel_manager.py
+from datetime import datetime
 from openpyxl import load_workbook
 import logging
 from typing import List, Dict, Optional
@@ -12,16 +13,33 @@ logger = logging.getLogger(__name__)
 class ExcelManager:
     def __init__(self, file_path: str, log_callback=None):
         self.file_path = file_path
-        self.wb = load_workbook(file_path)
+        self.wb = None
+        self._is_loaded = False
         self.equipment_map: Dict[str, Equipment] = {}
         self.default_path = "src\\output_files"
         self.log_callback = log_callback
     
+    def load_workbook(self):
+        """Explicitly load the workbook when needed"""
+        if not self._is_loaded:
+            self.wb = load_workbook(self.file_path)
+            self._is_loaded = True
+            self.log_info(f"Loaded workbook: {self.file_path}")
+
+    def close_workbook(self):
+        """Explicitly close the workbook"""
+        if self._is_loaded and self.wb:
+            self.wb.close()
+            self._is_loaded = False
+            self.log_info("Closed workbook")
+
+
     def read_masterfile(self) -> Dict[str, Equipment]:
         """
         Read the existing equipment structure from the Masterfile sheet
         Returns a dictionary of Equipment objects with equipment_number as key
         """
+        self.load_workbook()
         equipment_map = {}
         ws = self.wb['Masterfile']
         
@@ -76,6 +94,7 @@ class ExcelManager:
         self.equipment_map = equipment_map
         total_components = sum(len(eq.components) for eq in equipment_map.values())
         self.log_info(f"📖 Read {len(equipment_map)} equipment items with {total_components} total components")
+        self.close_workbook()
         return equipment_map
     
     # Updated methods to work with dictionary
@@ -181,6 +200,7 @@ class ExcelManager:
         Save the modified data back to Excel file
         """
         try:
+            self.load_workbook()
             ws = self.wb['Masterfile']
             
             for equipment in self.equipment_map.values():
@@ -219,12 +239,28 @@ class ExcelManager:
         except Exception as e:
             self.log_error(f"❌ Error saving Excel file: {e}")
             return False
-    
+        finally:
+            # Ensure workbook is closed in case of error
+            if self._is_loaded:
+                self.close_workbook()
+
+    def add_timestamp(self, original_filename):
+        # Get the current date and time
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        # Construct the new filename
+        new_filename = f"{original_filename}_{timestamp}"
+        
+        return new_filename
+
     def save_to_excel_with_dict(self, equipment_dict: Dict[str, Equipment], user_id: Optional[int] = None) -> bool:
         """
         Save equipment dictionary data back to Excel file
         """
         try:
+            # Load workbook if not loaded
+            if not self._is_loaded:
+                self.wb = load_workbook(self.file_path)
+                self._is_loaded = True
             ws = self.wb['Masterfile']
             
             for equipment in equipment_dict.values():
@@ -250,15 +286,18 @@ class ExcelManager:
                 path = "default\\excel"
                 output_path = os.path.join(self.default_path, path, f"{base_name}_modified{ext}")
             else:
-                os.makedirs(os.path.join(self.default_path, f"user_{user_id}", "excel"), exist_ok=True)
+                os.makedirs(os.path.join(self.default_path, f"{user_id}", "excel", "updated"), exist_ok=True)
                 base, ext = os.path.splitext(self.file_path)
                 path, base_name = os.path.split(base)
-                path = f"{user_id}\\excel"
-                output_path = os.path.join(self.default_path, path, f"{base_name}{ext}")
+                path = f"{user_id}\\excel\\updated"
+                name_with_timestamp = self.add_timestamp(base_name.strip())
+                output_path = os.path.join(self.default_path, path, f"{name_with_timestamp}{ext}")
             
             # Save the workbook
             self.wb.save(output_path)
             self.log_info(f"✅ Excel file saved successfully from dict: {output_path}")
+            # Close workbook after saving
+            self.close_workbook()
             return True
             
         except Exception as e:
