@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, Enum
-from AutoRBI_Database.database import Base
+from database import Base
 
 class Component(Base):
     __tablename__ = "component"

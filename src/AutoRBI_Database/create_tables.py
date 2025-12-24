@@ -1,8 +1,8 @@
-from AutoRBI_Database.base import Base
-from AutoRBI_Database.session import engine
+from database.base import Base
+from database.session import engine
 
 # Import ALL models so SQLAlchemy knows them
-from AutoRBI_Database.models import (
+from database.models import (
     User,
     Work,
     TypeMaterial,
@@ -10,7 +10,7 @@ from AutoRBI_Database.models import (
     Component,
     AssignWork,
     CorrectionLog,
-    WorkHistory
+    WorkHistory,
 )
 
 print("Creating tables...")

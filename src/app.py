@@ -3,6 +3,21 @@
 from tkinter import messagebox
 import customtkinter as ctk
 
+import sys, os
+
+# Absolute path to the folder where *this* file (app.py) lives
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# BASE_DIR == "C:\\Users\\user\\Desktop\\Workshop2\\AutoRBI\\src"
+
+# Path to the AutoRBI_Database folder
+DB_ROOT = os.path.join(BASE_DIR, "AutoRBI_Database")
+# DB_ROOT == "C:\\Users\\user\\Desktop\\Workshop2\\AutoRBI\\src\\AutoRBI_Database"
+
+# Add it to sys.path if it's not already there
+if DB_ROOT not in sys.path:
+    sys.path.append(DB_ROOT)
+
+
 import styles
 from UserInterface.views import (
     AnalyticsView,
@@ -77,7 +92,7 @@ class AutoRBIApp(ctk.CTk):
         self.analytics_view = AnalyticsView(self, self)
         self.settings_view = SettingsView(self, self)
         self.profile_view = ProfileView(self, self)
-         # Admin views
+        # Admin views
         self.user_management_view = UserManagementView(self, self)
 
         # Current user info (TODO: Get from authentication)
@@ -257,6 +272,7 @@ class AutoRBIApp(ctk.CTk):
                     f"Controller: Error closing database session: {e}",
                     exc_info=True,
                 )
+
     # ========================================================================
     # ADMIN METHODS
     # ========================================================================
@@ -267,23 +283,23 @@ class AutoRBIApp(ctk.CTk):
         role_filter: str = None,
         search_query: str = None,
         page: int = 1,
-        per_page: int = 20
+        per_page: int = 20,
     ) -> dict:
         """
         Get paginated list of users (admin only).
-        
+
         Args:
             status_filter: "Active" or "Inactive" (None = all)
             role_filter: "Admin" or "Engineer" (None = all)
             search_query: Search term
             page: Page number
             per_page: Items per page
-            
+
         Returns:
             Result dict with users list and pagination info
         """
         logger.info(f"Controller: Fetching users list (page {page})")
-        
+
         db = SessionLocal()
         try:
             result = admin_service.get_users(
@@ -293,7 +309,7 @@ class AutoRBIApp(ctk.CTk):
                 role_filter=role_filter,
                 search_query=search_query,
                 page=page,
-                per_page=per_page
+                per_page=per_page,
             )
             return result
         except Exception as e:
@@ -301,7 +317,7 @@ class AutoRBIApp(ctk.CTk):
             return {
                 "success": False,
                 "message": "Unable to fetch users.",
-                "error_type": "system"
+                "error_type": "system",
             }
         finally:
             db.close()
@@ -309,21 +325,19 @@ class AutoRBIApp(ctk.CTk):
     def toggle_user_status(self, user_id: int) -> dict:
         """
         Toggle user active/inactive status (admin only).
-        
+
         Args:
             user_id: ID of user to toggle
-            
+
         Returns:
             Result dict
         """
         logger.info(f"Controller: Toggling status for user ID {user_id}")
-        
+
         db = SessionLocal()
         try:
             result = admin_service.toggle_user_status(
-                db=db,
-                current_user=self.current_user,
-                target_user_id=user_id
+                db=db, current_user=self.current_user, target_user_id=user_id
             )
             return result
         except Exception as e:
@@ -331,7 +345,7 @@ class AutoRBIApp(ctk.CTk):
             return {
                 "success": False,
                 "message": "Operation failed.",
-                "error_type": "system"
+                "error_type": "system",
             }
         finally:
             db.close()
@@ -341,22 +355,22 @@ class AutoRBIApp(ctk.CTk):
         user_id: int,
         full_name: str = None,
         role: str = None,
-        new_password: str = None
+        new_password: str = None,
     ) -> dict:
         """
         Update user details (admin only).
-        
+
         Args:
             user_id: ID of user to update
             full_name: New full name (None = don't change)
             role: New role (None = don't change)
             new_password: New password (None = don't change)
-            
+
         Returns:
             Result dict
         """
         logger.info(f"Controller: Updating user ID {user_id}")
-        
+
         db = SessionLocal()
         try:
             result = admin_service.modify_user(
@@ -365,7 +379,7 @@ class AutoRBIApp(ctk.CTk):
                 target_user_id=user_id,
                 full_name=full_name,
                 role=role,
-                new_password=new_password
+                new_password=new_password,
             )
             return result
         except Exception as e:
@@ -373,32 +387,28 @@ class AutoRBIApp(ctk.CTk):
             return {
                 "success": False,
                 "message": "Operation failed.",
-                "error_type": "system"
+                "error_type": "system",
             }
         finally:
             db.close()
 
     def create_new_user(
-        self,
-        username: str,
-        full_name: str,
-        password: str,
-        role: str = "Engineer"
+        self, username: str, full_name: str, password: str, role: str = "Engineer"
     ) -> dict:
         """
         Create new user (admin only).
-        
+
         Args:
             username: New username
             full_name: Full name
             password: Password
             role: "Admin" or "Engineer"
-            
+
         Returns:
             Result dict
         """
         logger.info(f"Controller: Creating new user '{username}'")
-        
+
         db = SessionLocal()
         try:
             result = admin_service.add_user(
@@ -407,7 +417,7 @@ class AutoRBIApp(ctk.CTk):
                 username=username,
                 full_name=full_name,
                 password=password,
-                role=role
+                role=role,
             )
             return result
         except Exception as e:
@@ -415,7 +425,7 @@ class AutoRBIApp(ctk.CTk):
             return {
                 "success": False,
                 "message": "Operation failed.",
-                "error_type": "system"
+                "error_type": "system",
             }
         finally:
             db.close()
@@ -425,11 +435,10 @@ class AutoRBIApp(ctk.CTk):
         # Check if user is admin
         if self.current_user.get("role") != "Admin":
             messagebox.showerror(
-                "Access Denied",
-                "Only administrators can access User Management."
+                "Access Denied", "Only administrators can access User Management."
             )
             return
-        
+
         # Show the view
         self.user_management_view.show()
 
@@ -440,40 +449,42 @@ class AutoRBIApp(ctk.CTk):
     def update_profile(self, full_name: str = None, email: str = None) -> dict:
         """
         Update current user's profile information.
-        
+
         Args:
             full_name: New full name (None = don't change)
             email: New email (None = don't change)
-            
+
         Returns:
             Result dict with success status and updated user data
         """
-        logger.info(f"Controller: Updating profile for user ID {self.current_user.get('id')}")
-        
+        logger.info(
+            f"Controller: Updating profile for user ID {self.current_user.get('id')}"
+        )
+
         db = SessionLocal()
         try:
             result = profile_service.update_profile(
                 db=db,
                 user_id=self.current_user.get("id"),
                 full_name=full_name,
-                email=email
+                email=email,
             )
-            
+
             # Update session data if successful
             if result.get("success") and result.get("user"):
                 user_data = result["user"]
                 self.current_user["full_name"] = user_data.get("full_name")
                 self.current_user["email"] = user_data.get("email")
                 logger.info("Controller: Session data updated with new profile info")
-            
+
             return result
-            
+
         except Exception as e:
             logger.error(f"Controller: Error updating profile: {e}")
             return {
                 "success": False,
                 "message": "Unable to update profile.",
-                "error_type": "system"
+                "error_type": "system",
             }
         finally:
             db.close()
@@ -481,33 +492,35 @@ class AutoRBIApp(ctk.CTk):
     def change_password(self, current_password: str, new_password: str) -> dict:
         """
         Change current user's password.
-        
+
         Args:
             current_password: Current password for verification
             new_password: New password to set
-            
+
         Returns:
             Result dict with success status
         """
-        logger.info(f"Controller: Changing password for user ID {self.current_user.get('id')}")
-        
+        logger.info(
+            f"Controller: Changing password for user ID {self.current_user.get('id')}"
+        )
+
         db = SessionLocal()
         try:
             result = profile_service.change_password(
                 db=db,
                 user_id=self.current_user.get("id"),
                 current_password=current_password,
-                new_password=new_password
+                new_password=new_password,
             )
-            
+
             return result
-            
+
         except Exception as e:
             logger.error(f"Controller: Error changing password: {e}")
             return {
                 "success": False,
                 "message": "Unable to change password.",
-                "error_type": "system"
+                "error_type": "system",
             }
         finally:
             db.close()
@@ -515,19 +528,20 @@ class AutoRBIApp(ctk.CTk):
     def refresh_profile(self) -> dict:
         """
         Refresh current user's profile from database.
-        
+
         Returns:
             Result dict with user data
         """
-        logger.info(f"Controller: Refreshing profile for user ID {self.current_user.get('id')}")
-        
+        logger.info(
+            f"Controller: Refreshing profile for user ID {self.current_user.get('id')}"
+        )
+
         db = SessionLocal()
         try:
             result = profile_service.get_profile(
-                db=db,
-                user_id=self.current_user.get("id")
+                db=db, user_id=self.current_user.get("id")
             )
-            
+
             # Update session data if successful
             if result.get("success") and result.get("user"):
                 user_data = result["user"]
@@ -535,15 +549,15 @@ class AutoRBIApp(ctk.CTk):
                 self.current_user["email"] = user_data.get("email")
                 self.current_user["role"] = user_data.get("role")
                 self.current_user["created_at"] = user_data.get("created_at")
-            
+
             return result
-            
+
         except Exception as e:
             logger.error(f"Controller: Error refreshing profile: {e}")
             return {
                 "success": False,
                 "message": "Unable to load profile.",
-                "error_type": "system"
+                "error_type": "system",
             }
         finally:
             db.close()

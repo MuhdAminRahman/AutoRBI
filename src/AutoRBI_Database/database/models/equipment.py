@@ -1,7 +1,7 @@
 
 from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, UniqueConstraint
 from datetime import datetime
-from AutoRBI_Database.database import Base
+from database import Base
 
 class Equipment(Base):
     __tablename__ = "equipment"
