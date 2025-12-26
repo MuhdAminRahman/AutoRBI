@@ -20,6 +20,9 @@ class MainMenuView:
         self._datetime_label: Optional[ctk.CTkLabel] = None
         self.profile_dropdown_open = False
         self.search_results_frame: Optional[ctk.CTkFrame] = None
+        # Analytics attributes
+        self.current_period = "all_time"
+        self.kpi_cards = {}
 
     def _load_logo(self) -> Optional[ctk.CTkImage]:
         """Load the iPETRO logo from disk if available."""
@@ -240,176 +243,330 @@ class MainMenuView:
         )
         main_frame.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
 
-        main_frame.grid_rowconfigure(1, weight=1)
         main_frame.grid_columnconfigure(0, weight=1)
 
-        # Section title
-        welcome_label = ctk.CTkLabel(
+        # Analytics Dashboard Content (with scrolling for admin section)
+        main_frame.grid_rowconfigure(0, weight=1)  # Make scrollable area expand
+
+        scroll_container = ctk.CTkScrollableFrame(
             main_frame,
-            text="Main Menu",
-            font=("Segoe UI", 24, "bold"),
+            corner_radius=0,
+            border_width=0,
+            fg_color="transparent",
         )
-        welcome_label.grid(row=0, column=0, sticky="w", padx=24, pady=(18, 6))
+        scroll_container.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
+
+        analytics_frame = scroll_container
+        analytics_frame.grid_columnconfigure(0, weight=1)
+
+        # Analytics Dashboard title and Work History button row
+        title_frame = ctk.CTkFrame(analytics_frame, fg_color="transparent")
+        title_frame.grid(row=0, column=0, sticky="ew", pady=(18, 6))
+        title_frame.grid_columnconfigure(0, weight=1)
+
+        page_title = ctk.CTkLabel(
+            title_frame,
+            text="Analytics Dashboard",
+            font=("Segoe UI", 24, "bold"),
+            anchor="w",
+        )
+        page_title.grid(row=0, column=0, sticky="w", padx=24)
+
+        # Work History button at the top right of analytics section
+        work_history_btn = ctk.CTkButton(
+            title_frame,
+            text="📋 Work History",
+            command=self.controller.show_work_history,
+            width=120,
+            height=32,
+            font=("Segoe UI", 10),
+            fg_color=("#1B9751", "#1B9751"),  # Green colors
+            hover_color=("#228B22", "#228B22"),  # Darker green on hover
+        )
+        work_history_btn.grid(row=0, column=1, sticky="e", padx=(0, 24))
 
         subtitle_label = ctk.CTkLabel(
-            main_frame,
-            text="Choose what you want to work on.",
+            analytics_frame,
+            text="Monitor performance metrics and extraction statistics.",
             font=("Segoe UI", 11),
             text_color=("gray25", "gray80"),
         )
-        subtitle_label.grid(row=0, column=0, sticky="w", padx=24, pady=(44, 24))
+        subtitle_label.grid(row=1, column=0, sticky="w", padx=24, pady=(0, 18))
 
-        # Menu buttons container (grid of cards)
-        buttons_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
-        buttons_frame.grid(row=1, column=0, sticky="nsew", padx=24, pady=(0, 24))
+        # Period selector buttons
+        period_section = ctk.CTkFrame(analytics_frame, fg_color="transparent")
+        period_section.grid(row=2, column=0, sticky="ew", padx=24, pady=(0, 18))
 
-        for col in range(2):
-            buttons_frame.grid_columnconfigure(col, weight=1, uniform="menu_col")
-        for row in range(2):
-            buttons_frame.grid_rowconfigure(row, weight=1)
+        period_label = ctk.CTkLabel(
+            period_section,
+            text="Time period:",
+            font=("Segoe UI", 10, "bold"),
+        )
+        period_label.pack(side="left", padx=(0, 8))
 
-        # Button configurations
-        menu_buttons = [
-            (
-                "New Work",
-                "Create and manage new work items.",
-                self.controller.show_new_work,
-            ),
-            (
-                "Report Menu",
-                "Generate and review reports.",
-                self.controller.show_report_menu,
-            ),
-            (
-                "Work History Menu",
-                "Browse historical work items and activities.",
-                self.controller.show_work_history,
-            ),
-            (
-                "Analytics Dashboard",
-                "View performance and risk analytics.",
-                self.controller.show_analytics,
-            ),
+        period_buttons = [
+            ("All time", "all_time"),
+            ("Last month", "last_month"),
+            ("Last week", "last_week"),
+            ("Today", "today"),
         ]
-
-        # Button configurations
-        menu_buttons = [
-            (
-                "New Work",
-                "Create and manage new work items.",
-                self.controller.show_new_work,
-            ),
-            (
-                "Report Menu",
-                "Generate and review reports.",
-                self.controller.show_report_menu,
-            ),
-            (
-                "Work History Menu",
-                "Browse historical work items and activities.",
-                self.controller.show_work_history,
-            ),
-            (
-                "Analytics Dashboard",
-                "View performance and risk analytics.",
-                self.controller.show_analytics,
-            ),
-        ]
-
-        # Create "cards" with button and description
-        for idx, (title, description, command) in enumerate(menu_buttons):
-            row = idx // 2
-            col = idx % 2
-
-            card = ctk.CTkFrame(
-                buttons_frame,
-                corner_radius=16,
-                border_width=1,
-                border_color=("gray80", "gray30"),
+        for label, period_key in period_buttons:
+            btn = ctk.CTkButton(
+                period_section,
+                text=label,
+                width=100,
+                height=28,
+                font=("Segoe UI", 9),
+                fg_color=("gray20", "gray30") if getattr(self, 'current_period', 'all_time') != period_key else None,
+                command=lambda p=period_key: self._change_period(p),
             )
-            card.grid(
-                row=row,
-                column=col,
-                padx=10,
-                pady=10,
-                sticky="nsew",
-            )
+            btn.pack(side="left", padx=(0, 6))
 
-            card.grid_rowconfigure(1, weight=1)
-            card.grid_columnconfigure(0, weight=1)
+        # KPI cards row
+        kpi_section = ctk.CTkFrame(analytics_frame, fg_color="transparent")
+        kpi_section.grid(row=3, column=0, sticky="ew", padx=24, pady=(0, 18))
+        kpi_section.grid_columnconfigure(0, weight=1)
+        kpi_section.grid_columnconfigure(1, weight=1)
+        kpi_section.grid_columnconfigure(2, weight=1)
+        kpi_section.grid_columnconfigure(3, weight=1)
 
-            title_lbl = ctk.CTkLabel(
-                card,
-                text=title,
-                font=("Segoe UI", 15, "bold"),
-                anchor="w",
-            )
-            title_lbl.grid(row=0, column=0, sticky="w", padx=18, pady=(14, 4))
+        self._create_kpi_card(kpi_section, "Total Works", "0", "total_works_card", 0, 0)
+        self._create_kpi_card(kpi_section, "Success Rate", "0%", "success_rate_card", 0, 1)
+        self._create_kpi_card(kpi_section, "Avg Time", "0s", "avg_time_card", 0, 2)
+        self._create_kpi_card(kpi_section, "Total Files", "0", "total_files_card", 0, 3)
 
-            desc_lbl = ctk.CTkLabel(
-                card,
-                text=description,
-                font=("Segoe UI", 11),
-                text_color=("gray25", "gray80"),
-                anchor="w",
-                justify="left",
-                wraplength=260,
-            )
-            desc_lbl.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 10))
+        # Charts section (2 columns)
+        charts_section = ctk.CTkFrame(analytics_frame, fg_color="transparent")
+        charts_section.grid(row=4, column=0, sticky="ew", padx=24, pady=(0, 18))
+        charts_section.grid_columnconfigure(0, weight=1)
+        charts_section.grid_columnconfigure(1, weight=1)
 
-            action_btn = ctk.CTkButton(
-                card,
-                text="Open",
-                command=command,
-                height=32,
-                font=("Segoe UI", 10, "bold"),
-            )
-            action_btn.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 16))
+        # Chart 1: Works over time
+        chart1_card = ctk.CTkFrame(
+            charts_section,
+            corner_radius=12,
+            border_width=1,
+            border_color=("gray80", "gray30"),
+        )
+        chart1_card.grid(row=0, column=0, padx=(0, 8), pady=8, sticky="nsew")
+        chart1_card.grid_columnconfigure(0, weight=1)
+        chart1_card.grid_rowconfigure(1, weight=1)
+
+        chart1_title = ctk.CTkLabel(
+            chart1_card,
+            text="Works Over Time",
+            font=("Segoe UI", 12, "bold"),
+        )
+        chart1_title.grid(row=0, column=0, sticky="w", padx=16, pady=(12, 8))
+
+        chart1_placeholder = ctk.CTkLabel(
+            chart1_card,
+            text="[Chart placeholder]\nTime series visualization\nwill be rendered here.",
+            font=("Segoe UI", 10),
+            text_color=("gray50", "gray70"),
+            justify="center",
+        )
+        chart1_placeholder.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 16))
+
+        # Chart 2: Status distribution
+        chart2_card = ctk.CTkFrame(
+            charts_section,
+            corner_radius=12,
+            border_width=1,
+            border_color=("gray80", "gray30"),
+        )
+        chart2_card.grid(row=0, column=1, padx=(8, 0), pady=8, sticky="nsew")
+        chart2_card.grid_columnconfigure(0, weight=1)
+        chart2_card.grid_rowconfigure(1, weight=1)
+
+        chart2_title = ctk.CTkLabel(
+            chart2_card,
+            text="Status Distribution",
+            font=("Segoe UI", 12, "bold"),
+        )
+        chart2_title.grid(row=0, column=0, sticky="w", padx=16, pady=(12, 8))
+
+        chart2_placeholder = ctk.CTkLabel(
+            chart2_card,
+            text="[Chart placeholder]\nPie/bar chart showing\nstatus breakdown.",
+            font=("Segoe UI", 10),
+            text_color=("gray50", "gray70"),
+            justify="center",
+        )
+        chart2_placeholder.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 16))
+
+        # Summary statistics card
+        summary_card = ctk.CTkFrame(
+            analytics_frame,
+            corner_radius=12,
+            border_width=1,
+            border_color=("gray80", "gray30"),
+        )
+        summary_card.grid(row=5, column=0, sticky="ew", padx=24, pady=(0, 24))
+
+        summary_title = ctk.CTkLabel(
+            summary_card,
+            text="Recent Activity Summary",
+            font=("Segoe UI", 12, "bold"),
+        )
+        summary_title.grid(row=0, column=0, sticky="w", padx=16, pady=(12, 8))
+
+        summary_content = ctk.CTkLabel(
+            summary_card,
+            text="• Most active day: N/A\n• Peak extraction time: N/A\n• Most processed file type: N/A",
+            font=("Segoe UI", 10),
+            text_color=("gray50", "gray70"),
+            anchor="w",
+            justify="left",
+        )
+        summary_content.grid(row=1, column=0, sticky="w", padx=16, pady=(0, 16))
+
+        # Bottom action buttons (New Work and Report Menu) - with descriptions like previous cards
+        bottom_buttons_frame = ctk.CTkFrame(analytics_frame, fg_color="transparent")
+        bottom_buttons_frame.grid(row=6, column=0, sticky="ew", padx=24, pady=(0, 24))
+        bottom_buttons_frame.grid_columnconfigure(0, weight=1)
+        bottom_buttons_frame.grid_columnconfigure(1, weight=1)
+
+        # New Work card
+        new_work_card = ctk.CTkFrame(
+            bottom_buttons_frame,
+            corner_radius=16,
+            border_width=1,
+            border_color=("gray80", "gray30"),
+        )
+        new_work_card.grid(row=0, column=0, padx=(0, 10), pady=0, sticky="ew")
+        new_work_card.grid_rowconfigure(1, weight=1)
+        new_work_card.grid_columnconfigure(0, weight=1)
+
+        # New Work card title with separate icon and text for proper alignment
+        new_work_title_frame = ctk.CTkFrame(new_work_card, fg_color="transparent")
+        new_work_title_frame.grid(row=0, column=0, sticky="w", padx=18, pady=(14, 4))
+        new_work_title_frame.grid_columnconfigure(1, weight=1)
+
+        new_work_icon = ctk.CTkLabel(
+            new_work_title_frame,
+            text="📁",
+            font=("Segoe UI", 15),
+            anchor="w",
+        )
+        new_work_icon.grid(row=0, column=0, sticky="w", padx=(0, 6))
+
+        new_work_title = ctk.CTkLabel(
+            new_work_title_frame,
+            text="New Work",
+            font=("Segoe UI", 15, "bold"),
+            anchor="w",
+        )
+        new_work_title.grid(row=0, column=1, sticky="w")
+
+        new_work_desc = ctk.CTkLabel(
+            new_work_card,
+            text="Create and manage new work items.",
+            font=("Segoe UI", 11),
+            text_color=("gray25", "gray80"),
+            anchor="w",
+            justify="left",
+            wraplength=200,
+        )
+        new_work_desc.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 10))
+
+        new_work_btn = ctk.CTkButton(
+            new_work_card,
+            text="Open",
+            command=self.controller.show_new_work,
+            height=32,
+            font=("Segoe UI", 10, "bold"),
+            fg_color=("#3498db", "#2980b9"),
+            hover_color=("#2980b9", "#1f5f89"),
+        )
+        new_work_btn.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 16))
+
+        # Report Menu card
+        report_card = ctk.CTkFrame(
+            bottom_buttons_frame,
+            corner_radius=16,
+            border_width=1,
+            border_color=("gray80", "gray30"),
+        )
+        report_card.grid(row=0, column=1, padx=(10, 0), pady=0, sticky="ew")
+        report_card.grid_rowconfigure(1, weight=1)
+        report_card.grid_columnconfigure(0, weight=1)
+
+        # Report Menu card title with separate icon and text for proper alignment
+        report_title_frame = ctk.CTkFrame(report_card, fg_color="transparent")
+        report_title_frame.grid(row=0, column=0, sticky="w", padx=18, pady=(14, 4))
+        report_title_frame.grid_columnconfigure(1, weight=1)
+
+        report_icon = ctk.CTkLabel(
+            report_title_frame,
+            text="📊",
+            font=("Segoe UI", 15),
+            anchor="w",
+        )
+        report_icon.grid(row=0, column=0, sticky="w", padx=(0, 6))
+
+        report_title = ctk.CTkLabel(
+            report_title_frame,
+            text="Report Menu",
+            font=("Segoe UI", 15, "bold"),
+            anchor="w",
+        )
+        report_title.grid(row=0, column=1, sticky="w")
+
+        report_desc = ctk.CTkLabel(
+            report_card,
+            text="Generate and review reports.",
+            font=("Segoe UI", 11),
+            text_color=("gray25", "gray80"),
+            anchor="w",
+            justify="left",
+            wraplength=200,
+        )
+        report_desc.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 10))
+
+        report_btn = ctk.CTkButton(
+            report_card,
+            text="Open",
+            command=self.controller.show_report_menu,
+            height=32,
+            font=("Segoe UI", 10, "bold"),
+            fg_color=("#3498db", "#2980b9"),
+            hover_color=("#2980b9", "#1f5f89"),
+        )
+        report_btn.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 16))
 
         # ================================================================
         # ADMIN SECTION (Only visible to admins)
         # ================================================================
-        
+
         current_user_role = self.controller.current_user.get("role")
-        
+
         if current_user_role == "Admin":
-            # Add a third row for admin section
-            buttons_frame.grid_rowconfigure(2, weight=1)
-            
             # Admin section separator
             admin_separator = ctk.CTkFrame(
-                buttons_frame,
+                analytics_frame,
                 height=2,
                 fg_color=("gray80", "gray30"),
             )
-            admin_separator.grid(row=2, column=0, columnspan=2, sticky="ew", padx=10, pady=(20, 10))
-            
+            admin_separator.grid(row=7, column=0, sticky="ew", padx=24, pady=(20, 10))
+
             # Admin label
             admin_label = ctk.CTkLabel(
-                buttons_frame,
+                analytics_frame,
                 text="Administration",
                 font=("Segoe UI", 12, "bold"),
                 text_color=("gray50", "gray70"),
             )
-            admin_label.grid(row=3, column=0, sticky="w", padx=14, pady=(0, 5))
-            
-            # Admin card row
-            buttons_frame.grid_rowconfigure(4, weight=1)
-            
-            # User Management card
+            admin_label.grid(row=8, column=0, sticky="w", padx=24, pady=(0, 8))
+
+            # Admin management card
             admin_card = ctk.CTkFrame(
-                buttons_frame,
+                analytics_frame,
                 corner_radius=16,
                 border_width=1,
                 border_color=("#3498db", "#2980b9"),  # Blue border for admin card
             )
-            admin_card.grid(
-                row=4,
-                column=0,
-                padx=10,
-                pady=10,
-                sticky="nsew",
-            )
+            admin_card.grid(row=9, column=0, sticky="ew", padx=24, pady=(0, 24))
 
             admin_card.grid_rowconfigure(1, weight=1)
             admin_card.grid_columnconfigure(0, weight=1)
@@ -429,7 +586,7 @@ class MainMenuView:
                 text_color=("gray25", "gray80"),
                 anchor="w",
                 justify="left",
-                wraplength=260,
+                wraplength=400,
             )
             admin_desc_lbl.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 10))
 
@@ -460,10 +617,31 @@ class MainMenuView:
             widget.destroy()
 
         # Position dropdown below circular avatar
-        # Calculate position: right side of window, below header
-        window_width = self.parent.winfo_width() or 1100  # Default if not yet rendered
-        dropdown_x = window_width - 220  # 200px from right + 20px padding
-        self.profile_dropdown.place(x=dropdown_x, y=80, anchor="ne")
+        # Use profile section position for reliable placement in all modes
+        try:
+            # Get profile section position (more reliable than individual avatar)
+            profile_x = self.profile_section_ref.winfo_rootx() - self.parent.winfo_rootx()
+            profile_y = self.profile_section_ref.winfo_rooty() - self.parent.winfo_rooty()
+            profile_height = self.profile_section_ref.winfo_height()
+
+            # Position dropdown to the LEFT of profile section, below it
+            dropdown_x = profile_x - 420  # 200px wide dropdown positioned to the left
+            dropdown_y = profile_y + profile_height + 5
+
+            # Ensure dropdown stays within window bounds
+            if dropdown_x < 5:
+                dropdown_x = profile_x + self.profile_section_ref.winfo_width()  # Fallback to right side if left is off-screen
+            window_width = self.parent.winfo_width()
+            if dropdown_x + 200 > window_width:
+                dropdown_x = window_width - 205  # Keep margin from right edge
+
+        except Exception as e:
+            # Fallback: position to the left of the right edge
+            window_width = self.parent.winfo_width() or 1100
+            dropdown_x = max(5, window_width - 425)  # Position 200px from right edge, plus margin
+            dropdown_y = 80
+
+        self.profile_dropdown.place(x=dropdown_x, y=dropdown_y, anchor="nw")
 
         # Ensure dropdown is visible and on top of all widgets
         self.profile_dropdown.lift()
@@ -682,3 +860,38 @@ class MainMenuView:
                     self._hide_search_results()
             except:
                 pass
+
+    def _create_kpi_card(self, parent: ctk.CTkFrame, title: str, value: str, key: str, row: int, col: int) -> None:
+        """Create a KPI metric card."""
+        card = ctk.CTkFrame(
+            parent,
+            corner_radius=12,
+            border_width=1,
+            border_color=("gray80", "gray30"),
+        )
+        card.grid(row=row, column=col, padx=8, pady=8, sticky="nsew")
+
+        title_label = ctk.CTkLabel(
+            card,
+            text=title,
+            font=("Segoe UI", 11),
+            text_color=("gray50", "gray70"),
+        )
+        title_label.pack(pady=(12, 4))
+
+        value_label = ctk.CTkLabel(
+            card,
+            text=value,
+            font=("Segoe UI", 20, "bold"),
+        )
+        value_label.pack(pady=(0, 12))
+
+        self.kpi_cards[key] = card
+
+    def _change_period(self, period: str) -> None:
+        """Change analytics time period (button-based, no input fields)."""
+        # TODO: Backend - Query analytics for selected time period
+        # TODO: Backend - Calculate metrics for the period (daily, weekly, monthly, all-time)
+        # TODO: Backend - Return updated KPI values
+        self.current_period = period
+        # self.controller.load_analytics(period)

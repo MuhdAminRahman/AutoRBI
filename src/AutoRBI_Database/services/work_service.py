@@ -79,3 +79,13 @@ def create_work_with_items(db: Session, work_name: str, description: str, parsed
         # --------------------------------------------------------------
         db.rollback()
         raise e
+
+def get_assigned_works(db: Session, user_id: int):
+    """Get all works assigned to a specific user"""
+    works = get_works_for_user(db, user_id)
+    return works
+
+def get_work_details(db: Session, work_id: int):
+    """Get detailed information about a specific work, including equipment and components"""
+    workdetails = get_work_by_id(db, work_id)
+    return workdetails

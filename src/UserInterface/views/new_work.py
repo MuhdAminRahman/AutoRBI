@@ -1,8 +1,10 @@
 import os
-from typing import List, Optional, Set
+from typing import Dict, List, Optional, Set
 from tkinter import messagebox
 import customtkinter as ctk
 
+from UserInterface.services.database_service import DatabaseService
+from AutoRBI_Database.database.session import SessionLocal
 from data_extractor import MasterfileExtractor
 from data_extractor.utils import get_equipment_number_from_image_path
 from excel_manager import ExcelManager
@@ -14,6 +16,7 @@ from .page_builders import Page1Builder, Page2Builder
 from .ui_updater import UIUpdateManager
 from UserInterface.managers.extraction_manager import ExtractionManager
 from UserInterface.managers.state_manager import ViewState
+from UserInterface.managers.powerpoint_export_manager import PowerPointExportManager
 from UserInterface.services.file_service import FileService
 from UserInterface.services.equipment_service import EquipmentService
 from UserInterface.utils.threading_utils import SafeThreadExecutor, LoadingContext
@@ -40,6 +43,9 @@ class NewWorkView:
         self.controller = controller
         self._initialized = False
         self.is_extracting = False
+        current_work = getattr(self.controller, 'current_work', None)
+        self.work_id = current_work.get("work_id") if current_work else None
+        self.workpathname = current_work.get("work_name") if current_work else None
         
         # Initialize state
         self.state = ViewState()
@@ -92,6 +98,15 @@ class NewWorkView:
             self.ui_updater,
             self.log_callback
         )
+        self.powerpoint_manager = PowerPointExportManager(
+            project_root=self.project_root,
+            state=self.state,
+            controller=self.controller,
+            executor=self.executor,
+            log_callback=self.log_callback,
+            parent_window=self.parent  # Pass parent window reference
+        )
+
         
         # Initialize UI builders (but don't build yet)
         self.page1_builder = Page1Builder(parent, self)
@@ -141,11 +156,9 @@ class NewWorkView:
     def _initialize_converters(self) -> None:
         # PDF Converter
         self.pdf_converter = PDFToImageConverter()
-        current_work = getattr(self.controller, 'current_work', None)
-        work_id = current_work.get("id") if current_work else None
-        if work_id:
+        if self.work_id:
             self.state.converted_images_dir = os.path.join(
-                self.project_root, "src", "output_files", work_id, "converted_images"
+                self.project_root, "src", "output_files", self.workpathname, "converted_images"
             )
             self.pdf_converter.output_folder = self.state.converted_images_dir
 
@@ -204,11 +217,9 @@ class NewWorkView:
         has_permission = True
         
         # Get work and check Excel
-        current_work = getattr(self.controller, 'current_work', None)
-        work_id = current_work.get("id") if current_work else None
-        if work_id and not self.excel_file_info:
-            self.check_excel_file(work_id)
-        
+        if self.work_id and not self.excel_file_info:
+            self.check_excel_file(self.workpathname)
+
         # Validate data if on page 2
         data_validated = False
         if self.state.current_page == 2:
@@ -379,6 +390,7 @@ class NewWorkView:
         if not self._initialized:
             self._clear_parent()
             self.setInitialized(True)
+        
         self.show_page_1()
     
     def show_page_1(self) -> None:
@@ -452,8 +464,8 @@ class NewWorkView:
         
         if selected:
             # Convert PDFs to images
-            converted = self.file_service.convert_pdfs_to_images(selected)
-            
+            converted = self.file_service.convert_pdfs_to_images(selected, self.state.converted_images_dir)
+            self.state.converted_files.extend(converted)
             # Validate each equipment before adding
             valid_equipment = []
             for eq_no in converted:
@@ -475,6 +487,22 @@ class NewWorkView:
             
             if valid_equipment:
                 self.log_callback(f"📁 Added {len(valid_equipment)} file(s) for extraction")
+                
+                # DATABASE INTEGRATION: Log PDF upload
+                db = SessionLocal()
+                try:
+                    work_id = int(self.controller.current_work.get("work_id"))
+                    user_id = self.controller.current_user.get("id")
+                    
+                    DatabaseService.log_work_history(
+                        db, work_id, user_id,
+                        action_type="upload_pdf",
+                        description=f"Uploaded {len(valid_equipment)} GA drawing(s) with the name: {', '.join(valid_equipment)}"
+                    )
+                except Exception as e:
+                    self.log_callback(f"⚠️ Could not log upload: {e}")
+                finally:
+                    db.close()
             
             self.refresh_file_list()
             self.update_ui_state()
@@ -517,46 +545,6 @@ class NewWorkView:
         self.state.clear_files()
         self.refresh_file_list()
     
-    def upload_excel_for_work(self) -> None:
-        """Upload Excel file for current work"""
-        current_work = getattr(self.controller, 'current_work', None)
-        work_id = current_work.get("id") if current_work else None
-        
-        if not work_id:
-            messagebox.showwarning("No Work", Messages.NO_WORK)
-            return
-        
-        from tkinter import filedialog
-        import shutil
-        
-        filetypes = [("Excel files", "*.xlsx *.xls"), ("All files", "*.*")]
-        path = filedialog.askopenfilename(
-            title=f"Select Excel file for {work_id}",
-            filetypes=filetypes
-        )
-        
-        if not path:
-            return
-        
-        try:
-            dest_dir = os.path.join(self.project_root, "src", "output_files", work_id, "excel","default")
-            os.makedirs(dest_dir, exist_ok=True)
-            dest_file = os.path.join(dest_dir, os.path.basename(path))
-            shutil.copy2(path, dest_file)
-            
-            # Reinitialize Excel manager
-            self.excel_manager = ExcelManager(dest_file, log_callback=self.log_callback)
-            
-            messagebox.showinfo("Success", f"Excel file uploaded successfully for {work_id}.")
-            
-            # Refresh page 1 to update button visibility
-            if self.state.current_page == 1:
-                self.page1_frame = None  # Force rebuild
-                self.show_page_1()
-        
-        except Exception as e:
-            messagebox.showerror("Upload Failed", f"Failed to upload Excel file:\n{e}")
-    
     def refresh_file_list(self) -> None:
         """Refresh the file list display"""
         if not hasattr(self, 'file_listbox') or self.file_listbox is None:
@@ -566,9 +554,7 @@ class NewWorkView:
         self.file_listbox.delete("1.0", "end")
         
         # Show Excel status
-        current_work = getattr(self.controller, 'current_work', None)
-        work_id = current_work.get("id") if current_work else None
-        if work_id:
+        if self.work_id:
             excel_path = self._get_work_excel_path()
             if excel_path:
                 excel_filename = os.path.basename(excel_path)
@@ -640,7 +626,49 @@ class NewWorkView:
             # Mark complete
             self.state.extraction_complete = True
             self.is_extracting = False
-            
+            # DATABASE INTEGRATION: Save extracted equipment to database
+            db = SessionLocal()
+            try:
+                work_id = int(self.controller.current_work.get("work_id"))
+                user_id = self.controller.current_user.get("id")
+                
+                # Build drawing paths dictionary
+                drawing_paths = {}
+                for file_path in self.state.converted_files:
+                    equipment_number = get_equipment_number_from_image_path(file_path)
+                    drawing_paths[equipment_number] = file_path
+                
+                # Batch save equipment
+                success, failures = DatabaseService.batch_save_equipment(
+                    db, work_id, user_id, updated_map, drawing_paths
+                )
+                
+                self.log_callback(f"💾 Saved {success} equipment to database")
+                if failures > 0:
+                    self.log_callback(f"⚠️ Failed to save {failures} equipment")
+
+                DatabaseService.log_work_history(
+                    db, work_id, user_id,
+                    action_type="extract",
+                    description=f"Extracted {success} equipment items"
+                )
+                # Log extraction action
+                for equipment in updated_map.values():
+                    equipment_id = DatabaseService.get_equipment_id_by_equipment_number(
+                        db, work_id, equipment.equipment_number
+                    )
+                    DatabaseService.log_work_history(
+                        db, work_id, user_id,
+                        action_type="extract_equipment",
+                        equipment_id=equipment_id if equipment_id else None,
+                        description=f"Extracted data for equipment {equipment.equipment_number}"
+                    )
+                
+                
+            except Exception as e:
+                self.log_callback(f"⚠️ Database save error: {e}")
+            finally:
+                db.close()
             # Update UI state
             self.parent.after(0, self.update_ui_state)
             
@@ -885,10 +913,10 @@ class NewWorkView:
     # EXCEL FILE MANAGEMENT
     # =========================================================================
     
-    def check_excel_file(self, work_id: str) -> ExcelFileInfo:
+    def check_excel_file(self, workpathname: str) -> ExcelFileInfo:
         """Check Excel file status for a work"""
-        self.excel_file_info = self.excel_validator.get_excel_file_info(work_id)
-        
+        self.excel_file_info = self.excel_validator.get_excel_file_info(workpathname)
+
         # Log status
         if self.excel_file_info.file_type == ExcelFileType.NOT_FOUND:
             self.log_callback("📋 No Excel file found for this work")
@@ -910,14 +938,14 @@ class NewWorkView:
         
         return self.excel_file_info
     
-    def upload_default_excel(self, work_id: str) -> bool:
+    def upload_default_excel(self) -> bool:
         """Upload default Excel file for a work"""
         from tkinter import filedialog
         import shutil
         
         filetypes = [("Excel files", "*.xlsx *.xls"), ("All files", "*.*")]
         path = filedialog.askopenfilename(
-            title=f"Select Default Excel Masterfile for {work_id}",
+            title=f"Select Default Excel Masterfile for {self.workpathname}",
             filetypes=filetypes
         )
         
@@ -927,7 +955,7 @@ class NewWorkView:
         try:
             # Save to default location
             dest_dir = os.path.join(
-                self.project_root, "src", "output_files", work_id, "excel", "default"
+                self.project_root, "src", "output_files", self.workpathname, "excel", "default"
             )
             os.makedirs(dest_dir, exist_ok=True)
             dest_file = os.path.join(dest_dir, os.path.basename(path))
@@ -936,7 +964,7 @@ class NewWorkView:
             self.log_callback(f"✅ Default Excel uploaded: {os.path.basename(path)}")
             
             # Re-check Excel file status
-            self.check_excel_file(work_id)
+            self.check_excel_file(self.workpathname)
             
             # Refresh UI
             self.update_ui_state()
@@ -974,6 +1002,7 @@ class NewWorkView:
         
         with LoadingContext(self.controller, "Checking for changes...", show_progress=True) as loading:
             # Collect changes from UI
+            updated_equipment = self.state.equipment_map
             updated_equipment = self._collect_changes_from_ui()
             
             if not updated_equipment:
@@ -985,7 +1014,7 @@ class NewWorkView:
             # Save in background
             self.executor.submit(self._run_save, updated_equipment)
     
-    def _collect_changes_from_ui(self) -> dict:
+    def _collect_changes_from_ui(self) -> Dict[str,object]:
         """Collect changes from UI and return only modified equipment"""
         # Implementation similar to original _update_equipment_map_from_ui
         # but optimized to only copy changed equipment
@@ -1105,19 +1134,69 @@ class NewWorkView:
                     if value:
                         component.existing_data[key] = value
     
-    def _run_save(self, updated_equipment: dict) -> None:
+    def _run_save(self, updated_equipment: Dict[str, object]) -> None:
         """Run save in background thread"""
         try:
-            current_work = getattr(self.controller, 'current_work', None)
-            work_id = current_work.get("id") if current_work else None
 
-            success = self.equipment_service.save_equipment_data(updated_equipment, work_id)
+            success = self.equipment_service.save_equipment_data(updated_equipment, self.workpathname)
             
             if success:
                 # Update main equipment map
                 for eq_no, equipment in updated_equipment.items():
                     self.state.equipment_map[eq_no] = equipment
                 
+                # DATABASE INTEGRATION: Log corrections and save action
+                db = SessionLocal()
+                try:
+                    work_id = int(self.controller.current_work.get("work_id"))
+                    user_id = self.controller.current_user.get("id")
+                    
+                    # Log corrections for each equipment
+                    for eq_no, equipment in updated_equipment.items():
+                        # Get DB equipment
+                        db_equipment = DatabaseService.get_equipment_by_work_and_number(
+                            db, work_id, eq_no
+                        )
+                        
+                        if db_equipment:
+                            # Count corrections
+                            total_to_fill = 0
+                            total_corrected = 0
+                            
+                            for component in equipment.components:
+                                # Get original from state
+                                original = self.state.equipment_map.get(eq_no)
+                                if original:
+                                    orig_comp = original.get_component(component.component_name)
+                                    if orig_comp:
+                                        to_fill, corrected = DatabaseService.count_correction_fields(
+                                            orig_comp, 
+                                            component.existing_data
+                                        )
+                                        total_to_fill += to_fill
+                                        total_corrected += corrected
+                            
+                            # Log if there were corrections
+                            if total_corrected > 0:
+                                DatabaseService.log_correction(
+                                    db, db_equipment.equipment_id, user_id,
+                                    total_to_fill, total_corrected
+                                )
+                    
+                    # Log Excel generation
+                    DatabaseService.log_work_history(
+                        db, work_id, user_id,
+                        action_type="generate_excel",
+                        description=f"Generated Excel with {len(updated_equipment)} equipment"
+                    )
+                    
+                    self.log_callback(f"📊 Logged corrections to database")
+                    
+                except Exception as e:
+                    self.log_callback(f"⚠️ Could not log corrections: {e}")
+                finally:
+                    db.close()
+
                 # Show success
                 self.parent.after(0, lambda: messagebox.showinfo(
                     "Save Successful",
@@ -1160,32 +1239,19 @@ class NewWorkView:
             return
         
         # Proceed with export
-        self.open_powerpoint_dialog()
+        self.powerpoint_manager.export_to_powerpoint()
 
-    
-    def open_powerpoint_dialog(self) -> None:
-        """Open PowerPoint export dialog"""
-        if not self.state.has_equipment_data:
-            messagebox.showwarning("No Data", Messages.NO_DATA)
-            return
-        
-        # Implementation similar to original _open_powerpoint_export_dialog
-        # (keeping this simple for brevity - you can expand it)
-        messagebox.showinfo("PowerPoint", "PowerPoint export dialog would open here")
-    
     # =========================================================================
     # UTILITIES
     # =========================================================================
     
     def _get_work_excel_path(self) -> Optional[str]:
         """Get Excel path for current work"""
-        current_work = getattr(self.controller, 'current_work', None)
-        work_id = current_work.get("id") if current_work else None
-        if not work_id:
+        if not self.work_id:
             return None
-        
-        return self.file_service.get_work_excel_path(work_id, self.project_root)
-    
+
+        return self.file_service.get_work_excel_path(self.workpathname, self.project_root)
+
     def _on_work_selected(self, choice: str) -> None:
         """Handle work selection"""
         for work in self.controller.available_works:

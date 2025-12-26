@@ -21,6 +21,72 @@ class RegistrationView:
         self.parent = parent
         self.controller = controller
 
+    def _calculate_password_strength(self, password: str) -> tuple[int, str, str]:
+        """
+        Calculate password strength based on various criteria.
+
+        Returns:
+            tuple: (strength_percentage, strength_text, color)
+        """
+        if not password:
+            return 0, "No Password", "#FF4444"
+
+        score = 0
+        feedback = []
+
+        # Length check
+        if len(password) >= 8:
+            score += 25
+        elif len(password) >= 6:
+            score += 15
+        else:
+            feedback.append("At least 8 characters")
+
+        # Character variety checks
+        has_lower = any(c.islower() for c in password)
+        has_upper = any(c.isupper() for c in password)
+        has_digit = any(c.isdigit() for c in password)
+        has_special = any(not c.isalnum() for c in password)
+
+        if has_lower:
+            score += 20
+        else:
+            feedback.append("Lowercase letter")
+
+        if has_upper:
+            score += 20
+        else:
+            feedback.append("Uppercase letter")
+
+        if has_digit:
+            score += 15
+        else:
+            feedback.append("Number")
+
+        if has_special:
+            score += 20
+        else:
+            feedback.append("Special character")
+
+        # Determine strength level
+        if score >= 80:
+            strength_text = "Very Strong"
+            color = "#4CAF50"  # Green
+        elif score >= 60:
+            strength_text = "Strong"
+            color = "#8BC34A"  # Light green
+        elif score >= 40:
+            strength_text = "Medium"
+            color = "#FFC107"  # Yellow
+        elif score >= 20:
+            strength_text = "Weak"
+            color = "#FF9800"  # Orange
+        else:
+            strength_text = "Very Weak"
+            color = "#FF4444"  # Red
+
+        return score, strength_text, color
+
     def show(self) -> None:
         """Display the registration interface."""
         # Clear existing widgets
@@ -152,7 +218,40 @@ class RegistrationView:
             border_color=("#D0D0D0", "#505050"),
             fg_color=("#FFFFFF", "#3A3A3A"),
         )
-        password_entry.pack(fill="x", pady=(0, 16))
+        password_entry.pack(fill="x", pady=(0, 8))
+
+        # Password strength indicator frame
+        strength_frame = ctk.CTkFrame(fields, fg_color="transparent")
+        strength_frame.pack(fill="x", pady=(0, 16))
+
+        # Password strength progress bar
+        strength_progress = ctk.CTkProgressBar(
+            strength_frame,
+            width=200,
+            height=8,
+            corner_radius=4,
+        )
+        strength_progress.pack(side="left", padx=(0, 10))
+        strength_progress.set(0)  # Start at 0
+
+        # Password strength label
+        strength_label = ctk.CTkLabel(
+            strength_frame,
+            text="No Password",
+            font=("Segoe UI", 10),
+            text_color="#FF4444",  # Start with red
+        )
+        strength_label.pack(side="left")
+
+        # Function to update password strength
+        def update_password_strength(event=None):
+            password = password_entry.get()
+            strength, text, color = self._calculate_password_strength(password)
+            strength_progress.set(strength / 100.0)  # Convert to 0-1 range
+            strength_label.configure(text=text, text_color=color)
+
+        # Bind password entry to update strength on key release
+        password_entry.bind("<KeyRelease>", update_password_strength)
 
         # Confirm Password field
         confirm_label = ctk.CTkLabel(
