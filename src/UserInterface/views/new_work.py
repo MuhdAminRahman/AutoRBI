@@ -9,11 +9,13 @@ from data_extractor import MasterfileExtractor
 from data_extractor.utils import get_equipment_number_from_image_path
 from excel_manager import ExcelManager
 from convert_mypdf_to_image import PDFToImageConverter
+from models.equipment import Equipment
 
 # Import refactored components
 from .constants import Messages
 from .page_builders import Page1Builder, Page2Builder
 from .ui_updater import UIUpdateManager
+from .data_table import DataTableManager
 from UserInterface.managers.extraction_manager import ExtractionManager
 from UserInterface.managers.state_manager import ViewState
 from UserInterface.managers.powerpoint_export_manager import PowerPointExportManager
@@ -137,6 +139,7 @@ class NewWorkView:
         self.save_excel_button: Optional[ctk.CTkButton] = None
         self.export_ppt_button: Optional[ctk.CTkButton] = None
         self.info_label: Optional[ctk.CTkLabel] = None
+        self.data_table_manager = None
     
     # =========================================================================
     # INITIALIZATION
@@ -338,49 +341,6 @@ class NewWorkView:
         for widget in self.parent.winfo_children():
             widget.destroy()
 
-    def _show_no_work_assigned_screen(self) -> None:
-        """Show screen when user has no work assigned"""
-        self._clear_parent()
-        
-        frame = ctk.CTkFrame(self.parent, fg_color="transparent")
-        frame.pack(expand=True, fill="both", padx=50, pady=50)
-        
-        # Icon
-        icon = ctk.CTkLabel(
-            frame,
-            text="🚫",
-            font=("Segoe UI", 72)
-        )
-        icon.pack(pady=(50, 20))
-        
-        # Title
-        title = ctk.CTkLabel(
-            frame,
-            text="No Work Assigned",
-            font=("Segoe UI", 24, "bold")
-        )
-        title.pack(pady=10)
-        
-        # Message
-        msg = ctk.CTkLabel(
-            frame,
-            text="You do not have any work assigned.\nPlease contact your administrator.",
-            font=("Segoe UI", 14),
-            justify="center"
-        )
-        msg.pack(pady=20)
-        
-        # Back button
-        back_btn = ctk.CTkButton(
-            frame,
-            text="← Back to Main Menu",
-            command=self.controller.show_main_menu,
-            width=200,
-            height=40,
-            font=("Segoe UI", 12)
-        )
-        back_btn.pack(pady=30)
-
     def setInitialized(self, value: bool) -> None:
         self._initialized = value
 
@@ -442,11 +402,16 @@ class NewWorkView:
         # Show page 2
         self.page2_frame.pack(expand=True, fill="both")
         
-        # Rebuild data tables and validate
+        # Clear any existing content in files_edit_container
+        if hasattr(self, 'files_edit_container') and self.files_edit_container:
+            for child in self.files_edit_container.winfo_children():
+                child.destroy()
+        
+        # Rebuild data tables
         self.rebuild_data_tables()
-        # Validate data FIRST
+        
+        # Validate data
         self.validate_data()
-
         self.update_ui_state()
     
     # =========================================================================
@@ -761,14 +726,17 @@ class NewWorkView:
     # =========================================================================
     
     def rebuild_data_tables(self) -> None:
-        """Rebuild data tables on Page 2"""
+        """Rebuild data tables on Page 2 using DataTableManager"""
         if not hasattr(self, 'files_edit_container') or self.files_edit_container is None:
             return
         
         # Clear existing
         for child in self.files_edit_container.winfo_children():
             child.destroy()
-        self.state.file_to_textboxes.clear()
+        
+        # Initialize DataTableManager
+        self.data_table_manager = DataTableManager(self.files_edit_container, self.state.equipment_map)
+        self.data_table_manager.set_data_change_callback(self._on_table_data_change)
         
         if not self.state.selected_files:
             info = ctk.CTkLabel(
@@ -782,131 +750,62 @@ class NewWorkView:
         # Build table for each file
         from .constants import TableColumns
         
-        for file_idx, file_path in enumerate(self.state.selected_files, start=1):
-            self._build_file_table(file_path, file_idx, TableColumns.COLUMNS)
+        for file_path in self.state.selected_files:
+            # Prepare equipment data for this file
+            table_data = self._prepare_table_data_for_file(file_path)
+            
+            if table_data:
+                # Create table section
+                self.data_table_manager.create_section(
+                    file_path,
+                    TableColumns.COLUMNS,
+                    table_data
+                )
     
-    def _build_file_table(self, file_path: str, file_idx: int, columns: List[tuple]) -> None:
-        """Build editable table for a single file"""
-        from .constants import Colors, Sizes, Fonts
-        
-        filename = os.path.basename(file_path)
-        equipment_number = get_equipment_number_from_image_path(file_path)
-        
-        # File section
-        file_section = ctk.CTkFrame(self.files_edit_container, fg_color=Colors.TRANSPARENT)
-        file_section.pack(fill="x", padx=0, pady=(12, 8))
-        
-        # Header
-        header_text = f"📄 {filename}"
-        if equipment_number:
-            header_text += f" (Equipment: {equipment_number})"
-        
-        header = ctk.CTkLabel(file_section, text=header_text, font=Fonts.SECTION_LABEL)
-        header.pack(anchor="w", pady=(0, 8))
-        
-        # Get equipment data for this file
+    def _prepare_table_data_for_file(self, file_path: str) -> List[Dict]:
+        """Prepare equipment data for table display"""
+        table_data = []
         equipment_data = self.state.get_equipment_for_file(file_path)
         
         if not equipment_data:
-            no_data = ctk.CTkLabel(
-                file_section,
-                text=f"No equipment data found for {equipment_number or 'this file'}",
-                font=Fonts.SUBTITLE,
-                text_color=("gray50", "gray75"),
-            )
-            no_data.pack(pady=10)
-            return
+            return table_data
         
-        # Create table
-        table_frame = ctk.CTkScrollableFrame(
-            file_section,
-            fg_color=Colors.SECTION_BG,
-            corner_radius=Sizes.CORNER_RADIUS_XS,
-            height=300,
-            orientation="horizontal",
-        )
-        table_frame.pack(fill="both", expand=True)
-        
-        # Build table header
-        self._build_table_header(table_frame, columns)
-        
-        # Build table rows
-        self._build_table_rows(table_frame, file_path, equipment_data, columns)
-    
-    def _build_table_header(self, parent: ctk.CTkFrame, columns: List[tuple]) -> None:
-        """Build table header"""
-        from .constants import Colors, Fonts
-        
-        header_row = ctk.CTkFrame(parent, fg_color=Colors.TABLE_HEADER_BG, corner_radius=0)
-        header_row.pack(fill="x", padx=0, pady=0)
-        
-        for col_name, col_width in columns:
-            label = ctk.CTkLabel(
-                header_row,
-                text=col_name,
-                font=Fonts.TABLE_HEADER,
-                text_color=Colors.TABLE_HEADER_TEXT,
-                fg_color=Colors.TABLE_HEADER_BG,
-                width=col_width,
-                corner_radius=0,
-            )
-            label.pack(side="left", padx=1, pady=1)
-    
-    def _build_table_rows(
-        self, 
-        parent: ctk.CTkFrame,
-        file_path: str,
-        equipment_data: dict,
-        columns: List[tuple]
-    ) -> None:
-        """Build table rows with data"""
-        from .constants import Fonts
-        
-        row_entries = []
-        row_counter = 0
-        
-        # Convert equipment data to rows
+        # Convert equipment data to table rows
         for equipment in equipment_data.values():
             for component in equipment.components:
-                # Create row frame
-                row_frame = ctk.CTkFrame(parent, fg_color="transparent")
-                row_frame.pack(fill="x", padx=0, pady=1)
-                
-                # Column values
-                col_values = [
-                    str(row_counter + 1),
-                    equipment.equipment_number,
-                    equipment.pmt_number,
-                    equipment.equipment_description,
-                    component.component_name,
-                    component.phase,
-                    component.get_existing_data_value('fluid') or '',
-                    component.get_existing_data_value('material_type') or '',
-                    component.get_existing_data_value('spec') or '',
-                    component.get_existing_data_value('grade') or '',
-                    component.get_existing_data_value('insulation') or '',
-                    component.get_existing_data_value('design_temp') or '',
-                    component.get_existing_data_value('design_pressure') or '',
-                    component.get_existing_data_value('operating_temp') or '',
-                    component.get_existing_data_value('operating_pressure') or '',
-                ]
-                
-                # Create entry for each column
-                for col_idx, (col_name, col_width) in enumerate(columns):
-                    entry = ctk.CTkEntry(
-                        row_frame,
-                        font=Fonts.TINY,
-                        width=col_width,
-                        height=24,
-                    )
-                    entry.insert(0, col_values[col_idx])
-                    entry.pack(side="left", padx=1, pady=1)
-                    row_entries.append(entry)
-                
-                row_counter += 1
+                row_data = {
+                    'equipment_number': equipment.equipment_number,
+                    'pmt_number': equipment.pmt_number,
+                    'equipment_description': equipment.equipment_description,
+                    'component_name': component.component_name,
+                    'phase': component.phase,
+                    'fluid': component.get_existing_data_value('fluid') or '',
+                    'material_type': component.get_existing_data_value('material_type') or '',
+                    'spec': component.get_existing_data_value('spec') or '',
+                    'grade': component.get_existing_data_value('grade') or '',
+                    'insulation': component.get_existing_data_value('insulation') or '',
+                    'design_temp': component.get_existing_data_value('design_temp') or '',
+                    'design_pressure': component.get_existing_data_value('design_pressure') or '',
+                    'operating_temp': component.get_existing_data_value('operating_temp') or '',
+                    'operating_pressure': component.get_existing_data_value('operating_pressure') or '',
+                }
+                table_data.append(row_data)
         
-        # Store entries for this file
-        self.state.file_to_textboxes[file_path] = row_entries
+        return table_data
+
+    def _on_table_data_change(self, equipment_no: str, 
+                         component_name: str, data: Dict[str, str]):
+        """Handle data change from table"""
+        # Update equipment map immediately
+        if equipment_no in self.state.equipment_map:
+            equipment = self.state.equipment_map[equipment_no]
+            component = equipment.get_component(component_name)
+            if component:
+                # Update component data
+                for field, value in data.items():
+                    if value:  # Only update non-empty values
+                        component.existing_data[field] = value
+                print(f"Updated {equipment_no}/{component_name}: {data}")
     
     # =========================================================================
     # EXCEL FILE MANAGEMENT
@@ -982,7 +881,20 @@ class NewWorkView:
     
     def save_to_excel(self) -> None:
         """Save with validation"""
-        # Validate first
+        # FIRST: Collect ALL data from UI and update state
+        updated_equipment = self.collect_data_from_tables()
+        for eq_no, equipment in updated_equipment.items():
+            print(f"Collected Equipment {eq_no}:")
+            for component in equipment.components:
+                print(f"  Component {component.component_name}: {component.existing_data}")
+        
+        if not updated_equipment:
+            messagebox.showinfo("No Data", "No equipment data found in UI.")
+            return
+        
+        self.state.equipment_map = updated_equipment
+        
+        # Now validate using the updated state
         validation = self.validate_data()
         
         if not validation.is_valid:
@@ -992,229 +904,163 @@ class NewWorkView:
             )
             return
         
-         # Update UI state based on validation
+        # Update UI state based on validation
         self.update_ui_state()
+        
         # Proceed with save
         if not self.state.can_save:
             messagebox.showerror("No Data", Messages.NO_DATA)
             return
-        
-        with LoadingContext(self.controller, "Checking for changes...", show_progress=True) as loading:
-            # Collect changes from UI
-            updated_equipment = self.state.equipment_map
-            updated_equipment = self._collect_changes_from_ui()
-            
-            if not updated_equipment:
-                messagebox.showinfo("No Changes", "No changes were made to the equipment data.")
-                return
-            
-            loading.update_progress(0.5, f"Saving {len(updated_equipment)} equipment items...")
-            
-            # Save in background
-            self.executor.submit(self._run_save, updated_equipment)
-    
-    def _collect_changes_from_ui(self) -> Dict[str,object]:
-        """Collect changes from UI and return only modified equipment"""
-        # Implementation similar to original _update_equipment_map_from_ui
-        # but optimized to only copy changed equipment
-        
-        changed_equipment = {}
-        
-        for file_path, entries in self.state.file_to_textboxes.items():
-            if not entries:
-                continue
-            
-            from .constants import TableColumns
-            num_cols = TableColumns.NUM_COLUMNS
-            num_rows = len(entries) // num_cols
-            
-            for row_idx in range(num_rows):
-                start_idx = row_idx * num_cols
-                row_entries = entries[start_idx:start_idx + num_cols]
+        success = self.equipment_service.save_equipment_data(updated_equipment, self.workpathname)
+        if success:
+            with LoadingContext(self.controller, "Saving changes...", show_progress=True) as loading:
+                loading.update_progress(0.5, f"Saving {len(updated_equipment)} equipment items...")
                 
-                if len(row_entries) < num_cols:
-                    continue
-                
-                equipment_no = row_entries[1].get().strip()
-                parts = row_entries[4].get().strip()
-                
-                if equipment_no and equipment_no in self.state.equipment_map and parts:
-                    # Check if this equipment has changes
-                    has_changes = self._check_row_for_changes(
-                        equipment_no, 
-                        parts, 
-                        row_entries
-                    )
-                    
-                    if has_changes and equipment_no not in changed_equipment:
-                        # Deep copy only when we know there are changes
-                        changed_equipment[equipment_no] = self._deep_copy_equipment(
-                            self.state.equipment_map[equipment_no]
-                        )
-                        
-                        # Apply changes
-                        self._apply_row_changes(
-                            changed_equipment[equipment_no],
-                            parts,
-                            row_entries
-                        )
-        
-        return changed_equipment
-    
-    def _check_row_for_changes(self, equipment_no: str, parts: str, row_entries: list) -> bool:
-        """Check if a row has changes"""
-        equipment = self.state.equipment_map.get(equipment_no)
-        if not equipment:
-            return False
-        
-        for component in equipment.components:
-            if component.component_name == parts:
-                # Check if any field changed
-                ui_values = {
-                    'fluid': row_entries[6].get().strip(),
-                    'type': row_entries[7].get().strip(),
-                    'spec': row_entries[8].get().strip(),
-                    'grade': row_entries[9].get().strip(),
-                    'insulation': row_entries[10].get().strip(),
-                    'design_temp': row_entries[11].get().strip(),
-                    'design_pressure': row_entries[12].get().strip(),
-                    'operating_temp': row_entries[13].get().strip(),
-                    'operating_pressure': row_entries[14].get().strip(),
-                }
-                
-                for key, ui_value in ui_values.items():
-                    if ui_value:
-                        current_value = str(component.get_existing_data_value(key) or '')
-                        if ui_value != current_value:
-                            return True
-        
-        return False
-    
-    def _deep_copy_equipment(self, equipment):
-        """Deep copy an equipment object"""
-        from models import Equipment, Component
-        
-        new_equipment = Equipment(
-            equipment_number=equipment.equipment_number,
-            pmt_number=equipment.pmt_number,
-            equipment_description=equipment.equipment_description,
-            row_index=equipment.row_index
-        )
-        
-        for component in equipment.components:
-            new_component = Component(
-                component_name=component.component_name,
-                phase=component.phase,
-                existing_data=component.existing_data.copy(),
-                row_index=component.row_index
-            )
-            new_equipment.add_component(new_component)
-        
-        return new_equipment
-    
-    def _apply_row_changes(self, equipment, parts: str, row_entries: list) -> None:
-        """Apply UI changes to equipment"""
-        for component in equipment.components:
-            if component.component_name == parts:
-                updates = {
-                    'fluid': row_entries[6].get().strip(),
-                    'type': row_entries[7].get().strip(),
-                    'spec': row_entries[8].get().strip(),
-                    'grade': row_entries[9].get().strip(),
-                    'insulation': row_entries[10].get().strip(),
-                    'design_temp': row_entries[11].get().strip(),
-                    'design_pressure': row_entries[12].get().strip(),
-                    'operating_temp': row_entries[13].get().strip(),
-                    'operating_pressure': row_entries[14].get().strip(),
-                }
-                
-                # Apply non-empty updates
-                for key, value in updates.items():
-                    if value:
-                        component.existing_data[key] = value
-    
-    def _run_save(self, updated_equipment: Dict[str, object]) -> None:
-        """Run save in background thread"""
-        try:
-
-            success = self.equipment_service.save_equipment_data(updated_equipment, self.workpathname)
-            
-            if success:
-                # Update main equipment map
-                for eq_no, equipment in updated_equipment.items():
-                    self.state.equipment_map[eq_no] = equipment
-                
-                # DATABASE INTEGRATION: Log corrections and save action
-                db = SessionLocal()
-                try:
-                    work_id = int(self.controller.current_work.get("work_id"))
-                    user_id = self.controller.current_user.get("id")
-                    
-                    # Log corrections for each equipment
-                    for eq_no, equipment in updated_equipment.items():
-                        # Get DB equipment
-                        db_equipment = DatabaseService.get_equipment_by_work_and_number(
-                            db, work_id, eq_no
-                        )
-                        
-                        if db_equipment:
-                            # Count corrections
-                            total_to_fill = 0
-                            total_corrected = 0
-                            
-                            for component in equipment.components:
-                                # Get original from state
-                                original = self.state.equipment_map.get(eq_no)
-                                if original:
-                                    orig_comp = original.get_component(component.component_name)
-                                    if orig_comp:
-                                        to_fill, corrected = DatabaseService.count_correction_fields(
-                                            orig_comp, 
-                                            component.existing_data
-                                        )
-                                        total_to_fill += to_fill
-                                        total_corrected += corrected
-                            
-                            # Log if there were corrections
-                            if total_corrected > 0:
-                                DatabaseService.log_correction(
-                                    db, db_equipment.equipment_id, user_id,
-                                    total_to_fill, total_corrected
-                                )
-                    
-                    # Log Excel generation
-                    DatabaseService.log_work_history(
-                        db, work_id, user_id,
-                        action_type="generate_excel",
-                        description=f"Generated Excel with {len(updated_equipment)} equipment"
-                    )
-                    
-                    self.log_callback(f"📊 Logged corrections to database")
-                    
-                except Exception as e:
-                    self.log_callback(f"⚠️ Could not log corrections: {e}")
-                finally:
-                    db.close()
-
-                # Show success
-                self.parent.after(0, lambda: messagebox.showinfo(
-                    "Save Successful",
-                    Messages.SAVE_SUCCESS.format(len(updated_equipment))
-                ))
-                
-                if hasattr(self.controller, 'show_notification'):
-                    self.parent.after(0, lambda: self.controller.show_notification(
-                        Messages.SAVE_SUCCESS.format(len(updated_equipment)),
-                        "success",
-                        5000
-                    ))
-            else:
+                # Save in background - pass the updated equipment
+            self.executor.submit(self._run_save)
+        else:
+                # If save failed
                 self.parent.after(0, lambda: messagebox.showerror(
                     "Save Failed",
                     Messages.SAVE_FAILED
                 ))
+    
+    def collect_data_from_tables(self) -> Dict[str, Equipment]:
+        """Collect all data from tables and return equipment dictionary"""
+        if not self.data_table_manager:
+            print("DEBUG: No data_table_manager!")
+            return {}
+        
+        # Get all equipment directly from the table manager
+        equipment_dict = self.data_table_manager.get_all_equipment()
+        print(f"DEBUG: Collected {len(equipment_dict)} equipment items")
+        
+        # Debug output
+        for equipment_no, equipment in equipment_dict.items():
+            print(f"\nEquipment: {equipment_no}")
+            print(f"  PMT: {equipment.pmt_number}")
+            print(f"  Description: {equipment.equipment_description}")
+            print(f"  Components: {len(equipment.components)}")
+            
+            for component in equipment.components:
+                print(f"    Component: {component.component_name}")
+                print(f"      Phase: {component.phase}")
+                print(f"      Data: {component.existing_data}")
+        
+        print(f"\nDEBUG: Total equipment: {len(equipment_dict)}")
+        return equipment_dict
+    
+    def _run_save(self,) -> None:
+        """Run save in background thread"""
+        try:
+            db = SessionLocal()
+            try:
+                work_id = int(self.controller.current_work.get("work_id"))
+                user_id = self.controller.current_user.get("id")
+                
+                total_equipment_saved = 0
+                total_components_saved = 0
+                
+                # Process each equipment in the state
+                for eq_no, ui_equipment in self.state.equipment_map.items():
+                    # Get equipment from database (check if exists)
+                    db_equipment = DatabaseService.get_equipment_by_work_and_number(
+                        db, work_id, eq_no
+                    )
+                    
+                    if db_equipment:
+                        # Compare with database original and update
+                        print(f"\nDEBUG: Updating existing equipment: {eq_no}")
+                        
+                        # We'll use batch save approach - update equipment info if needed
+                        # The DatabaseService.save_equipment_with_components will handle updates
+                        
+                        # Save/update equipment with its components
+                        drawing_path = ""  # You might need to get this from somewhere
+                        result = DatabaseService.save_equipment_with_components(
+                            db, work_id, user_id, ui_equipment, drawing_path
+                        )
+                        
+                        if result:
+                            # Count corrections (calculate fields changed)
+                            corrections_count = 0
+                            # You could implement logic here to count specific corrections
+                            
+                            if corrections_count > 0:
+                                # Log correction (simplified - count all fields as potential corrections)
+                                total_fields = len(ui_equipment.components) * 9  # Approx 9 fields per component
+                                DatabaseService.log_correction(
+                                    db, db_equipment.equipment_id, user_id,
+                                    total_fields, corrections_count
+                                )
+                            
+                            total_equipment_saved += 1
+                            total_components_saved += len(ui_equipment.components)
+                        else:
+                            print(f"WARNING: Failed to update equipment {eq_no}")
+                    
+                    else:
+                        # Equipment doesn't exist in database - create it
+                        print(f"\nDEBUG: Creating new equipment: {eq_no}")
+                        
+                        # Save new equipment with components
+                        drawing_path = ""  # You might need to get this from somewhere
+                        result = DatabaseService.save_equipment_with_components(
+                            db, work_id, user_id, ui_equipment, drawing_path
+                        )
+                        
+                        if result:
+                            total_equipment_saved += 1
+                            total_components_saved += len(ui_equipment.components)
+                            
+                            # Get the newly created equipment ID
+                            new_equipment_id = DatabaseService.get_equipment_id_by_equipment_number(
+                                db, work_id, eq_no
+                            )
+                            
+                            if new_equipment_id:
+                                # Log creation as correction
+                                total_fields = len(ui_equipment.components) * 9
+                                DatabaseService.log_correction(
+                                    db, new_equipment_id, user_id,
+                                    0, total_fields  # All fields are new
+                                )
+                        else:
+                            print(f"WARNING: Failed to create equipment {eq_no}")
+                
+                # Log Excel generation to work history
+                if total_equipment_saved > 0:
+                    DatabaseService.log_work_history(
+                        db, work_id, user_id,
+                        action_type="generate_excel",
+                        description=f"Generated Excel with {total_equipment_saved} equipment and {total_components_saved} components"
+                    )
+                    
+                    self.log_callback(f"💾 Saved {total_equipment_saved} equipment with {total_components_saved} components to database")
+                else:
+                    self.log_callback(f"⚠️ No equipment saved to database")
+                
+                # Commit transaction
+                db.commit()
+                
+                # Show success message
+                self.parent.after(0, lambda: messagebox.showinfo(
+                    "Save Successful",
+                    Messages.SAVE_SUCCESS.format(len(self.state.equipment_map))
+                ))
+                
+            except Exception as e:
+                db.rollback()
+                self.log_callback(f"⚠️ Database update error: {e}")
+                import traceback
+                traceback.print_exc()
+            finally:
+                db.close()
         
         except Exception as e:
+            self.log_callback(f"❌ Save error: {e}")
+            import traceback
+            traceback.print_exc()
             self.parent.after(0, lambda: messagebox.showerror(
                 "Save Error",
                 f"Error saving data: {str(e)}"
@@ -1226,7 +1072,21 @@ class NewWorkView:
     
     def export_to_powerpoint(self) -> None:
         """Export to PowerPoint with validation"""
-        # Validate first
+        print("DEBUG: Starting PowerPoint export...")
+        
+        # FIRST: Collect ALL data from UI and update state
+        updated_equipment = self.collect_data_from_tables()
+        
+        if updated_equipment:
+            print(f"DEBUG: Updating equipment map with {len(updated_equipment)} equipment")
+            # IMMEDIATELY update the state with UI values
+            for eq_no, equipment in updated_equipment.items():
+                self.state.equipment_map[eq_no] = equipment
+                print(f"  Updated {eq_no}")
+        else:
+            print("DEBUG: No updated equipment collected")
+        
+        # Now validate using the updated state
         validation = self.validate_data()
         
         if not validation.is_valid:
@@ -1237,7 +1097,8 @@ class NewWorkView:
             )
             return
         
-        # Proceed with export
+        print("DEBUG: Proceeding with PowerPoint export")
+        # Proceed with export - the state now has updated values
         self.powerpoint_manager.export_to_powerpoint()
 
     # =========================================================================
