@@ -659,68 +659,48 @@ class NewWorkView:
     # =========================================================================
     
     def validate_data(self) -> ValidationResult:
-        """Validate all data on Page 2"""
-        self.validation_result = self.data_validator.validate_equipment_map(
-            self.state.equipment_map,
-            self.state.file_to_textboxes
-        )
-        
-        if self.validation_result.has_empty_cells:
-            self.log_callback(
-                f"⚠️ Found {len(self.validation_result.empty_cells)} empty required field(s)"
+        """Validate all data on Page 2 using DataTableManager"""
+        if not self.data_table_manager:
+            # No tables to validate yet
+            self.validation_result = ValidationResult(
+                is_valid=False,
+                empty_cells=[],
+                format_errors=[],
+                error_message="No data tables found",
+                error_widgets=[]
             )
-            # Highlight empty cells
-            self._highlight_empty_cells()
-        else:
-            self.log_callback("✅ All required fields are filled")
-            # Clear any previous highlights
-            self._clear_highlights()
+            self.state.can_save = False
+            return self.validation_result
         
+        # Use the new DataValidator with format checking
+        self.validation_result = self.data_validator.validate_and_highlight(data_table_manager=self.data_table_manager)
+        
+        if self.validation_result.has_errors:
+            self.log_callback(
+                f"⚠️ Found {self.validation_result.total_errors} error(s): "
+                f"{len(self.validation_result.empty_cells)} missing, "
+                f"{len(self.validation_result.format_errors)} format errors"
+            )
+        else:
+            self.log_callback("✅ All fields are valid")
+        
+        self.state.can_save = self.validation_result.is_valid
         
         return self.validation_result
-    
+
     def _highlight_empty_cells(self) -> None:
-        """Highlight empty required cells in red"""
+        """Highlight empty required cells in red - Updated for DataTableManager"""
         if not self.validation_result or not self.validation_result.has_empty_cells:
             return
         
-        empty_indices = self.data_validator.get_empty_cell_indices(
-            self.state.file_to_textboxes,
-            self.validation_result.empty_cells
-        )
-        
-        # Highlight each empty entry
-        for file_path, entries in self.state.file_to_textboxes.items():
-            for idx, entry in enumerate(entries):
-                if idx in empty_indices:
-                    entry.configure(
-                        fg_color=("#FFE6E6", "#4D0000"),  # Light red
-                        border_color=("red", "darkred"),
-                        border_width=2
-                    )
-                    self.highlighted_entries.add(id(entry))
-                elif id(entry) in self.highlighted_entries:
-                    # Clear previous highlight
-                    entry.configure(
-                        fg_color=("white", "gray20"),
-                        border_color=("gray70", "gray30"),
-                        border_width=1
-                    )
-                    self.highlighted_entries.discard(id(entry))
-    
-    def _clear_highlights(self) -> None:
-        """Clear all cell highlights"""
-        for file_path, entries in self.state.file_to_textboxes.items():
-            for entry in entries:
-                if id(entry) in self.highlighted_entries:
-                    entry.configure(
-                        fg_color=("white", "gray20"),
-                        border_color=("gray70", "gray30"),
-                        border_width=1
-                    )
-        
-        self.highlighted_entries.clear()
+        # Use the new validator's highlighting method
+        # (The highlighting is already done in validate_and_highlight)
+        pass
 
+    def _clear_highlights(self) -> None:
+        """Clear all cell highlights - Updated for DataTableManager"""
+        if self.data_table_manager:
+            self.data_validator.clear_highlights(self.data_table_manager)
     # =========================================================================
     # DATA MANAGEMENT
     # =========================================================================
@@ -880,46 +860,54 @@ class NewWorkView:
     # =========================================================================
     
     def save_to_excel(self) -> None:
-        """Save with validation"""
-        # FIRST: Collect ALL data from UI and update state
+        """Save with validation using DataTableManager"""
+        # Validate data first (includes format checking)
+        validation = self.validate_data()
+        
+        if not validation.is_valid:
+            # Show detailed error message
+            error_details = []
+            if validation.empty_cells:
+                error_details.append(f"{len(validation.empty_cells)} missing required fields")
+            if validation.format_errors:
+                error_details.append(f"{len(validation.format_errors)} format errors")
+            
+            error_msg = f"Found {validation.total_errors} error(s): {', '.join(error_details)}\n\n"
+            error_msg += validation.error_message
+            
+            messagebox.showerror(
+                "Validation Failed",
+                error_msg + "\n\nErrors are highlighted:\n• Red: Missing required fields\n• Yellow: Format errors"
+            )
+            return
+        # Collect data from tables (this updates the state)
         updated_equipment = self.collect_data_from_tables()
-        for eq_no, equipment in updated_equipment.items():
-            print(f"Collected Equipment {eq_no}:")
-            for component in equipment.components:
-                print(f"  Component {component.component_name}: {component.existing_data}")
         
         if not updated_equipment:
             messagebox.showinfo("No Data", "No equipment data found in UI.")
             return
         
-        self.state.equipment_map = updated_equipment
+        # Update the state with UI values
+        for eq_no, equipment in updated_equipment.items():
+            self.state.equipment_map[eq_no] = equipment
         
-        # Now validate using the updated state
-        validation = self.validate_data()
+        print(f"DEBUG: Updated state with {len(self.state.equipment_map)} equipment items")
         
-        if not validation.is_valid:
-            messagebox.showerror(
-                "Validation Failed",
-                validation.error_message + "\n\nEmpty fields are highlighted in red."
+        # Save to Excel file
+        with LoadingContext(self.controller, "Saving changes...", show_progress=True) as loading:
+            loading.update_progress(0.5, f"Saving {len(updated_equipment)} equipment items...")
+            
+            # Save Excel in main thread (to avoid file locking issues)
+            success = self.equipment_service.save_equipment_data(
+                self.state.equipment_map, 
+                self.workpathname
             )
-            return
-        
-        # Update UI state based on validation
-        self.update_ui_state()
-        
-        # Proceed with save
-        if not self.state.can_save:
-            messagebox.showerror("No Data", Messages.NO_DATA)
-            return
-        success = self.equipment_service.save_equipment_data(updated_equipment, self.workpathname)
-        if success:
-            with LoadingContext(self.controller, "Saving changes...", show_progress=True) as loading:
-                loading.update_progress(0.5, f"Saving {len(updated_equipment)} equipment items...")
-                
-                # Save in background - pass the updated equipment
-            self.executor.submit(self._run_save)
-        else:
-                # If save failed
+            
+            if success:
+                # Save to database in background thread
+                self.executor.submit(self._run_save)
+            else:
+                # If Excel save failed
                 self.parent.after(0, lambda: messagebox.showerror(
                     "Save Failed",
                     Messages.SAVE_FAILED
@@ -1074,19 +1062,7 @@ class NewWorkView:
         """Export to PowerPoint with validation"""
         print("DEBUG: Starting PowerPoint export...")
         
-        # FIRST: Collect ALL data from UI and update state
-        updated_equipment = self.collect_data_from_tables()
-        
-        if updated_equipment:
-            print(f"DEBUG: Updating equipment map with {len(updated_equipment)} equipment")
-            # IMMEDIATELY update the state with UI values
-            for eq_no, equipment in updated_equipment.items():
-                self.state.equipment_map[eq_no] = equipment
-                print(f"  Updated {eq_no}")
-        else:
-            print("DEBUG: No updated equipment collected")
-        
-        # Now validate using the updated state
+        # Validate data first
         validation = self.validate_data()
         
         if not validation.is_valid:
@@ -1095,6 +1071,20 @@ class NewWorkView:
                 validation.error_message + "\n\nEmpty fields are highlighted in red." +
                 "\n\nPlease fill all required fields before exporting."
             )
+            return
+        
+        # Collect data from tables
+        updated_equipment = self.collect_data_from_tables()
+        
+        if updated_equipment:
+            print(f"DEBUG: Updating equipment map with {len(updated_equipment)} equipment")
+            # Update the state with UI values
+            for eq_no, equipment in updated_equipment.items():
+                self.state.equipment_map[eq_no] = equipment
+                print(f"  Updated {eq_no}")
+        else:
+            print("DEBUG: No updated equipment collected")
+            messagebox.showinfo("No Data", "No equipment data found in UI.")
             return
         
         print("DEBUG: Proceeding with PowerPoint export")
