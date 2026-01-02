@@ -127,14 +127,14 @@ class DataTableSection:
     def add_table(self, columns: List[tuple], equipment_data: List[Dict]):
         """Add a table to this section"""
         from .constants import Colors, Sizes
-        
+        estimated_height = min(600, max(200, len(equipment_data) * 30 + 50))
         # Create scrollable table frame
         self.table_frame = ctk.CTkScrollableFrame(
             self.section_frame,
             fg_color=Colors.SECTION_BG,
             corner_radius=Sizes.CORNER_RADIUS_XS,
-            height=300,
-            orientation="horizontal",
+            height=estimated_height,
+            orientation="vertical",
         )
         self.table_frame.pack(fill="both", expand=True)
         
