@@ -3,6 +3,7 @@
 from typing import List, Dict, Any, Optional
 import customtkinter as ctk
 from tkinter import messagebox
+from datetime import datetime, timezone
 
 
 class WorkHistoryView:
@@ -66,6 +67,25 @@ class WorkHistoryView:
 
         # Update pagination display
         self._update_pagination_display()
+
+    def _format_timestamp(self, utc_timestamp_str: str) -> str:
+        """Convert UTC timestamp to local time for display."""
+        try:
+            # Parse the UTC timestamp
+            if isinstance(utc_timestamp_str, str):
+                utc_dt = datetime.fromisoformat(
+                    utc_timestamp_str.replace("Z", "+00:00")
+                )
+            else:
+                utc_dt = utc_timestamp_str
+
+            # Convert to local time
+            local_dt = utc_dt.replace(tzinfo=timezone.utc).astimezone(tz=None)
+
+            # Format for display
+            return local_dt.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            return str(utc_timestamp_str)
 
     def _update_pagination_display(self) -> None:
         """Update pagination button states and page info label"""
@@ -222,9 +242,10 @@ class WorkHistoryView:
         desc_label.grid(row=0, column=4, sticky="nsew", padx=8, pady=12)
 
         # Column 5: Timestamp
+        timestamp_display = self._format_timestamp(timestamp)
         time_label = ctk.CTkLabel(
             row_frame,
-            text=timestamp,
+            text=timestamp_display,
             font=("Segoe UI", 10),
             text_color=("gray60", "gray80"),
             anchor="center",
