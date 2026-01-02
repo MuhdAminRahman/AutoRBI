@@ -11,6 +11,7 @@ This layer handles:
 from sqlalchemy.orm import Session
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
+from sqlalchemy import text 
 
 from AutoRBI_Database.logging_config import get_logger
 from AutoRBI_Database.database.crud.work_history_crud import (
@@ -213,7 +214,7 @@ def get_work_history(
             if entry.equipment_id:
                 try:
                     result = db.execute(
-                        "SELECT equipment_no FROM equipment WHERE equipment_id = :eq_id",
+                        text("SELECT equipment_no FROM equipment WHERE equipment_id = :eq_id"),
                         {"eq_id": entry.equipment_id},
                     ).fetchone()
 
