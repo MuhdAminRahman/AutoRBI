@@ -459,6 +459,7 @@ class AutoRBIApp(ctk.CTk):
 
     def show_report_menu(self) -> None:
         """Display the Report Menu view."""
+        self.available_works = self.getAssignedWorks()
         self.report_menu_view.show()
 
     def show_analytics(self) -> None:
