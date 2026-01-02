@@ -23,6 +23,9 @@ class ViewState:
     converted_images_dir: Optional[str] = None
     selected_excel: Optional[str] = None
     
+    # Add this for can_save tracking (make it a field, not a property)
+    _can_save: bool = field(default=False, init=False)  # Private attribute
+    
     @property
     def has_files(self) -> bool:
         """Check if any files are selected"""
@@ -41,7 +44,12 @@ class ViewState:
     @property
     def can_save(self) -> bool:
         """Check if data can be saved"""
-        return self.has_equipment_data
+        return self._can_save  # Return the private attribute
+    
+    @can_save.setter
+    def can_save(self, value: bool) -> None:
+        """Set can_save property"""
+        self._can_save = value
     
     def add_file(self, file_path: str) -> None:
         """Add file to selection"""

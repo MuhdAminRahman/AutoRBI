@@ -1,5 +1,9 @@
-anthropic==0.74.1
+anthropic==0.75.0
+customtkinter==5.2.2
 openpyxl==3.1.5
+passlib==1.7.4
 pdf2image==1.17.0
 Pillow==12.0.0
 python-dotenv==1.2.1
+python_pptx==1.0.2
+SQLAlchemy==2.0.45
