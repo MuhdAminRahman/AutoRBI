@@ -642,7 +642,7 @@ class UserFormDialog(ctk.CTkToplevel):
             else f"Edit User: {user_data.get('username', '')}"
         )
         self.title(title)
-        self.geometry("450x550")
+        self.geometry("450x620")
         self.resizable(False, False)
 
         # Make modal
@@ -841,7 +841,7 @@ class UserFormDialog(ctk.CTkToplevel):
             text="Cancel",
             command=self.destroy,
             width=140,  # Increased width
-            height=40,  # Increased height
+            height=38,  # Increased height
             font=("Segoe UI", 11, "bold"),  # Larger font
             fg_color="transparent",
             text_color=("gray20", "gray90"),
@@ -857,7 +857,7 @@ class UserFormDialog(ctk.CTkToplevel):
             text=save_text,
             command=self._save,
             width=160,  # Increased width
-            height=40,  # Increased height
+            height=38,  # Increased height
             font=("Segoe UI", 11, "bold"),  # Larger font
         )
         save_btn.pack(side="right")
