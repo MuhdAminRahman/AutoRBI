@@ -204,6 +204,15 @@ class LoginView:
 
                 if auth_result.get("success"):
                     # SUCCESS - Proceed to main menu
+
+                    self.controller.available_works = self.controller.getAssignedWorks()
+
+                    self.controller.current_work = (
+                        self.controller.available_works[0]
+                        if self.controller.available_works
+                        else None
+                    )
+
                     self.controller.show_main_menu()
 
                 else:
@@ -290,7 +299,7 @@ class LoginView:
                 )
                 # Could log this error if you have UI-level logging
                 print(f"UI Error in login: {e}")  # Basic logging
-            
+
         # Primary button with glass effect
         login_btn = ctk.CTkButton(
             fields,

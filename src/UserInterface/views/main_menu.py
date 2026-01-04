@@ -2,13 +2,15 @@
 
 import os
 from datetime import datetime
-from typing import Optional
+from typing import Dict, List, Optional
 
 from PIL import Image
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 import shutil
 
+from UserInterface.services.database_service import DatabaseService
+from AutoRBI_Database.database.session import SessionLocal
 
 class MainMenuView:
     """Handles the main menu interface."""
@@ -207,7 +209,7 @@ class MainMenuView:
         # Initially hide the dropdown
         self.profile_dropdown.place_forget()
 
-        # Logout button
+        # Logout button (red color)
         logout_btn = ctk.CTkButton(
             profile_section,
             text="Logout",
@@ -215,6 +217,8 @@ class MainMenuView:
             width=100,
             height=36,
             font=("Segoe UI", 10, "bold"),
+            fg_color=("#e74c3c", "#c0392b"),
+            hover_color=("#c0392b", "#a93226"),
         )
         logout_btn.pack(side="left")
 
@@ -231,159 +235,102 @@ class MainMenuView:
 
         root_frame.bind("<Button-1>", delayed_click_handler)
 
-        # Main content area
-        main_frame = ctk.CTkFrame(
+        # Main content area - Scrollable
+        main_frame = ctk.CTkScrollableFrame(
             root_frame,
             corner_radius=18,
             border_width=1,
             border_color=("gray80", "gray25"),
         )
         main_frame.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
-
-        main_frame.grid_rowconfigure(1, weight=1)
         main_frame.grid_columnconfigure(0, weight=1)
+
+        # Header section with title and Work History button
+        header_section = ctk.CTkFrame(main_frame, fg_color="transparent")
+        header_section.grid(row=0, column=0, sticky="ew", padx=24, pady=(18, 6))
+        header_section.grid_columnconfigure(0, weight=1)
 
         # Section title
         welcome_label = ctk.CTkLabel(
-            main_frame,
+            header_section,
             text="Main Menu",
             font=("Segoe UI", 24, "bold"),
         )
-        welcome_label.grid(row=0, column=0, sticky="w", padx=24, pady=(18, 6))
+        welcome_label.grid(row=0, column=0, sticky="w")
+
+        # Work History button (top right, green color)
+        work_history_btn = ctk.CTkButton(
+            header_section,
+            text="📋 Work History",
+            command=self.controller.show_work_history,
+            width=140,
+            height=36,
+            font=("Segoe UI", 11, "bold"),
+            fg_color=("#2ecc71", "#27ae60"),
+            hover_color=("#27ae60", "#229954"),
+        )
+        work_history_btn.grid(row=0, column=1, sticky="e")
 
         subtitle_label = ctk.CTkLabel(
             main_frame,
-            text="Choose what you want to work on.",
+            text="Monitor your RBI data assessment and quick actions.",
             font=("Segoe UI", 11),
             text_color=("gray25", "gray80"),
         )
-        subtitle_label.grid(row=0, column=0, sticky="w", padx=24, pady=(44, 24))
+        subtitle_label.grid(row=1, column=0, sticky="w", padx=24, pady=(0, 18))
 
-        # Menu buttons container (grid of cards)
+        # ========== ANALYTICS DASHBOARD SECTION ==========
+        self._build_embedded_analytics(main_frame, row=2)
+
+        # ========== QUICK ACTIONS SECTION ==========
+        actions_title = ctk.CTkLabel(
+            main_frame,
+            text="Quick Actions",
+            font=("Segoe UI", 18, "bold"),
+        )
+        actions_title.grid(row=3, column=0, sticky="w", padx=24, pady=(24, 12))
+
+        # Menu buttons container (2 cards side by side)
         buttons_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
-        buttons_frame.grid(row=1, column=0, sticky="nsew", padx=24, pady=(0, 24))
+        buttons_frame.grid(row=4, column=0, sticky="ew", padx=24, pady=(0, 24))
 
-        for col in range(2):
-            buttons_frame.grid_columnconfigure(col, weight=1, uniform="menu_col")
-        for row in range(2):
-            buttons_frame.grid_rowconfigure(row, weight=1)
+        buttons_frame.grid_columnconfigure(0, weight=1, uniform="menu_col")
+        buttons_frame.grid_columnconfigure(1, weight=1, uniform="menu_col")
 
-        # Button configurations
+        # Button configurations (New Work and Report Menu only)
         menu_buttons = [
             (
-                "New Work",
+                "📝 New Work",
                 "Create and manage new work items.",
                 self.controller.show_new_work,
             ),
             (
-                "Report Menu",
+                "📊 Report Menu",
                 "Generate and review reports.",
                 self.controller.show_report_menu,
             ),
-            (
-                "Work History Menu",
-                "Browse historical work items and activities.",
-                self.controller.show_work_history,
-            ),
-            (
-                "Analytics Dashboard",
-                "View performance and risk analytics.",
-                self.controller.show_analytics,
-            ),
         ]
-
-        # Button configurations
-        menu_buttons = [
-            (
-                "New Work",
-                "Create and manage new work items.",
-                self.controller.show_new_work,
-            ),
-            (
-                "Report Menu",
-                "Generate and review reports.",
-                self.controller.show_report_menu,
-            ),
-            (
-                "Work History Menu",
-                "Browse historical work items and activities.",
-                self.controller.show_work_history,
-            ),
-            (
-                "Analytics Dashboard",
-                "View performance and risk analytics.",
-                self.controller.show_analytics,
-            ),
-        ]
-
-        # Create "cards" with button and description
-        for idx, (title, description, command) in enumerate(menu_buttons):
-            row = idx // 2
-            col = idx % 2
-
-            card = ctk.CTkFrame(
-                buttons_frame,
-                corner_radius=16,
-                border_width=1,
-                border_color=("gray80", "gray30"),
-            )
-            card.grid(
-                row=row,
-                column=col,
-                padx=10,
-                pady=10,
-                sticky="nsew",
-            )
-
-            card.grid_rowconfigure(1, weight=1)
-            card.grid_columnconfigure(0, weight=1)
-
-            title_lbl = ctk.CTkLabel(
-                card,
-                text=title,
-                font=("Segoe UI", 15, "bold"),
-                anchor="w",
-            )
-            title_lbl.grid(row=0, column=0, sticky="w", padx=18, pady=(14, 4))
-
-            desc_lbl = ctk.CTkLabel(
-                card,
-                text=description,
-                font=("Segoe UI", 11),
-                text_color=("gray25", "gray80"),
-                anchor="w",
-                justify="left",
-                wraplength=260,
-            )
-            desc_lbl.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 10))
-
-            action_btn = ctk.CTkButton(
-                card,
-                text="Open",
-                command=command,
-                height=32,
-                font=("Segoe UI", 10, "bold"),
-            )
-            action_btn.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 16))
 
         # ================================================================
         # ADMIN SECTION (Only visible to admins)
         # ================================================================
-        
+
         current_user_role = self.controller.current_user.get("role")
-        
+
         if current_user_role == "Admin":
             # Add a third row for admin section
             buttons_frame.grid_rowconfigure(2, weight=1)
-            
+
             # Admin section separator
             admin_separator = ctk.CTkFrame(
                 buttons_frame,
                 height=2,
                 fg_color=("gray80", "gray30"),
             )
-            admin_separator.grid(row=2, column=0, columnspan=2, sticky="ew", padx=10, pady=(20, 10))
-            
+            admin_separator.grid(
+                row=2, column=0, columnspan=2, sticky="ew", padx=10, pady=(20, 10)
+            )
+
             # Admin label
             admin_label = ctk.CTkLabel(
                 buttons_frame,
@@ -392,10 +339,10 @@ class MainMenuView:
                 text_color=("gray50", "gray70"),
             )
             admin_label.grid(row=3, column=0, sticky="w", padx=14, pady=(0, 5))
-            
+
             # Admin card row
             buttons_frame.grid_rowconfigure(4, weight=1)
-            
+
             # User Management card
             admin_card = ctk.CTkFrame(
                 buttons_frame,
@@ -443,6 +390,311 @@ class MainMenuView:
                 hover_color=("#2980b9", "#1f5f89"),
             )
             admin_action_btn.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 16))
+
+        # Create "cards" with button and description
+        for idx, (title, description, command) in enumerate(menu_buttons):
+            col = idx
+
+            card = ctk.CTkFrame(
+                buttons_frame,
+                corner_radius=16,
+                border_width=1,
+                border_color=("gray80", "gray30"),
+            )
+            card.grid(
+                row=0,
+                column=col,
+                padx=10,
+                pady=10,
+                sticky="nsew",
+            )
+
+            card.grid_rowconfigure(1, weight=1)
+            card.grid_columnconfigure(0, weight=1)
+
+            title_lbl = ctk.CTkLabel(
+                card,
+                text=title,
+                font=("Segoe UI", 15, "bold"),
+                anchor="w",
+            )
+            title_lbl.grid(row=0, column=0, sticky="w", padx=18, pady=(14, 4))
+
+            desc_lbl = ctk.CTkLabel(
+                card,
+                text=description,
+                font=("Segoe UI", 11),
+                text_color=("gray25", "gray80"),
+                anchor="w",
+                justify="left",
+                wraplength=260,
+            )
+            desc_lbl.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 10))
+
+            action_btn = ctk.CTkButton(
+                card,
+                text="Open",
+                command=command,
+                height=32,
+                font=("Segoe UI", 10, "bold"),
+            )
+            action_btn.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 16))
+
+    def initialize_analytics_data(self) -> Dict[str, int]:
+        try:
+            db = SessionLocal()
+             # Get all needed data
+            completed_work = DatabaseService.get_work_completion_percentage(
+                db=db, 
+                user_id=self.controller.current_user.get("id")
+            )
+            
+            total_equipment = DatabaseService.get_total_equipment_count_for_all_works(
+                db=db, 
+                user_id=self.controller.current_user.get("id")
+            )
+            
+            extracted_equipment = DatabaseService.get_fully_extracted_equipment_count(
+                db=db, 
+                user_id=self.controller.current_user.get("id")
+            )
+            
+            # Calculate average health score
+            """"
+            health score is based on these factors:
+
+            Equipment completion (fields filled)
+
+            Component completion (fields filled)
+
+            Data extraction status (has extracted_date)
+
+            Data quality (values are valid/complete)
+            """
+            avg_health_score = DatabaseService.calculate_average_health_score(
+                db=db,
+                user_id=self.controller.current_user.get("id")
+            )
+            
+            # Calculate completion rate
+            total_percentage = 0
+            for work in completed_work.values():
+                total_percentage += work
+            completion_rate = int(total_percentage / len(completed_work)) if completed_work else 0
+            
+            analytics_data = {
+                "work_completion": completion_rate if completion_rate is not None else 2,
+                "total_equipment": total_equipment if total_equipment is not None else 2,
+                "equipment_extracted": extracted_equipment if extracted_equipment is not None else 2,
+                "avg_health_score": int(avg_health_score) if avg_health_score is not None else 61,
+            }
+            return analytics_data
+        except Exception as e:
+            # Log error and return zeros on failure
+            print(f"Error initializing analytics data: {e}")
+        
+
+    def _build_embedded_analytics(self, parent, row: int):
+        """Embedded analytics overview in main menu with simplified metrics."""
+        # Analytics container
+        analytics_section = ctk.CTkFrame(
+            parent,
+            corner_radius=12,
+            border_width=1,
+            border_color=("gray80", "gray30"),
+        )
+        analytics_section.grid(row=row, column=0, sticky="ew", padx=24, pady=(0, 12))
+        analytics_section.grid_columnconfigure(0, weight=1)
+
+        # Analytics header
+        header_frame = ctk.CTkFrame(analytics_section, fg_color="transparent")
+        header_frame.grid(row=0, column=0, sticky="ew", padx=18, pady=(14, 12))
+        header_frame.grid_columnconfigure(0, weight=1)
+
+        analytics_title = ctk.CTkLabel(
+            header_frame,
+            text="📊 Analytics Overview",
+            font=("Segoe UI", 18, "bold"),
+        )
+        analytics_title.grid(row=0, column=0, sticky="w")
+
+        analytics_subtitle = ctk.CTkLabel(
+            header_frame,
+            text="Quick snapshot of your RBI assessment progress",
+            font=("Segoe UI", 10),
+            text_color=("gray40", "gray75"),
+        )
+        analytics_subtitle.grid(row=1, column=0, sticky="w", pady=(2, 0))
+
+        # ========== BACKEND INTEGRATION ==========
+        analytics_data = self.initialize_analytics_data()
+        
+        # Placeholder data for demonstration (REMOVE WHEN BACKEND IS IMPLEMENTED)
+        work_completion = analytics_data["work_completion"]  # % of work completed/total work
+        equipment_extracted = analytics_data["equipment_extracted"]  # number extracted
+        total_equipment = analytics_data["total_equipment"]  # total equipment
+        avg_health_score = analytics_data["avg_health_score"]  # average health score
+
+        # Metrics container with 3 circular progress indicators
+        metrics_container = ctk.CTkFrame(
+            analytics_section,
+            fg_color="transparent",
+        )
+        metrics_container.grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 12))
+        metrics_container.grid_columnconfigure(0, weight=1, uniform="metric")
+        metrics_container.grid_columnconfigure(1, weight=1, uniform="metric")
+        metrics_container.grid_columnconfigure(2, weight=1, uniform="metric")
+
+        # Metric 1: Work Completion
+        self._create_circular_metric(
+            metrics_container,
+            column=0,
+            icon="📋",
+            title="Work Completion",
+            value=f"{work_completion}%",
+            subtitle=f"{work_completion} of 100 tasks",
+            color=("#3498db", "#2980b9"),
+        )
+
+        # Metric 2: Equipment Extracted
+        extraction_percent = (
+            int((equipment_extracted / total_equipment) * 100)
+            if total_equipment > 0
+            else 0
+        )
+        self._create_circular_metric(
+            metrics_container,
+            column=1,
+            icon="🔧",
+            title="Equipment Extracted",
+            value=f"{equipment_extracted}/{total_equipment}",
+            subtitle=f"{extraction_percent}% complete",
+            color=("#9b59b6", "#8e44ad"),
+        )
+
+        # Metric 3: Average Health Score
+        health_color = self._get_health_color(avg_health_score)
+        self._create_circular_metric(
+            metrics_container,
+            column=2,
+            icon=(
+                "💚"
+                if avg_health_score >= 80
+                else "💛" if avg_health_score >= 60 else "❤️"
+            ),
+            title="Avg Health Score",
+            value=f"{avg_health_score}/100",
+            subtitle=self._get_health_status(avg_health_score),
+            color=health_color,
+        )
+
+        # Analytics button at bottom left
+        view_analytics_btn = ctk.CTkButton(
+            analytics_section,
+            text="📊 View Full Analytics",
+            command=self.controller.show_analytics,
+            width=180,
+            height=36,
+            font=("Segoe UI", 11, "bold"),
+            fg_color=("#3498db", "#2980b9"),
+            hover_color=("#2980b9", "#21618c"),
+        )
+        view_analytics_btn.grid(row=2, column=0, sticky="w", padx=18, pady=(0, 16))
+
+    def _create_circular_metric(
+        self,
+        parent,
+        column: int,
+        icon: str,
+        title: str,
+        value: str,
+        subtitle: str,
+        color: tuple,
+    ):
+        """Create a circular metric card with icon and values."""
+        # TODO: Backend - Future Enhancement: Implement circular progress ring visualization
+        # TODO: Backend - Add animated progress ring around the icon
+        # TODO: Backend - Progress ring should fill based on percentage value
+        # TODO: Backend - Use libraries like matplotlib or custom canvas drawing for progress ring
+
+        metric_card = ctk.CTkFrame(
+            parent,
+            corner_radius=12,
+            fg_color=("gray95", "gray18"),
+            border_width=1,
+            border_color=("gray85", "gray25"),
+        )
+        metric_card.grid(row=0, column=column, padx=8, pady=8, sticky="nsew")
+        metric_card.grid_columnconfigure(0, weight=1)
+
+        # Icon with circular background
+        icon_frame = ctk.CTkFrame(
+            metric_card,
+            width=60,
+            height=60,
+            corner_radius=30,
+            fg_color=color,
+        )
+        icon_frame.grid(row=0, column=0, pady=(16, 8))
+        icon_frame.grid_propagate(False)
+
+        icon_label = ctk.CTkLabel(
+            icon_frame,
+            text=icon,
+            font=("Segoe UI", 28),
+        )
+        icon_label.place(relx=0.5, rely=0.5, anchor="center")
+
+        # Title
+        title_label = ctk.CTkLabel(
+            metric_card,
+            text=title,
+            font=("Segoe UI", 11, "bold"),
+            text_color=("gray30", "gray90"),
+        )
+        title_label.grid(row=1, column=0, pady=(0, 4))
+
+        # Main value
+        value_label = ctk.CTkLabel(
+            metric_card,
+            text=value,
+            font=("Segoe UI", 20, "bold"),
+            text_color=color,
+        )
+        value_label.grid(row=2, column=0, pady=(0, 4))
+
+        # Subtitle
+        subtitle_label = ctk.CTkLabel(
+            metric_card,
+            text=subtitle,
+            font=("Segoe UI", 9),
+            text_color=("gray50", "gray70"),
+        )
+        subtitle_label.grid(row=3, column=0, pady=(0, 16))
+
+    def _get_health_color(self, score: int) -> tuple:
+        """Get color based on health score."""
+        # TODO: Backend - Ensure this logic matches RBIAnalyticsEngine.get_work_health_score()
+        # TODO: Backend - Current thresholds: >=80 (Green), >=60 (Orange), <60 (Red)
+        # TODO: Backend - Align with RBIAnalyticsEngine thresholds if different
+        if score >= 80:
+            return ("#2ecc71", "#27ae60")  # Green
+        elif score >= 60:
+            return ("#f39c12", "#e67e22")  # Orange
+        else:
+            return ("#e74c3c", "#c0392b")  # Red
+
+    def _get_health_status(self, score: int) -> str:
+        """Get health status text based on score."""
+        # TODO: Backend - Ensure this logic matches RBIAnalyticsEngine risk level mapping
+        # TODO: Backend - Consider using same status strings as analytics.py (LOW-Ready, MEDIUM-Review, HIGH-Gaps, CRITICAL)
+        # TODO: Backend - Current implementation uses simplified status for overview
+        if score >= 80:
+            return "Excellent"
+        elif score >= 60:
+            return "Good"
+        else:
+            return "Needs Attention"
 
     def _toggle_profile_dropdown(self) -> None:
         """Toggle profile dropdown menu."""
