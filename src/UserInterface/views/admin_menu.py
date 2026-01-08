@@ -1,4 +1,4 @@
-"""Main menu view for AutoRBI application (CustomTkinter)."""
+"""Admin menu view for AutoRBI application (CustomTkinter)."""
 
 import os
 from datetime import datetime
@@ -12,9 +12,8 @@ import shutil
 from UserInterface.services.database_service import DatabaseService
 from AutoRBI_Database.database.session import SessionLocal
 
-
-class MainMenuView:
-    """Handles the main menu interface."""
+class AdminMenuView:
+    """Handles the admin menu interface."""
 
     def __init__(self, parent: ctk.CTk, controller):
         self.parent = parent
@@ -23,7 +22,6 @@ class MainMenuView:
         self._datetime_label: Optional[ctk.CTkLabel] = None
         self.profile_dropdown_open = False
         self.search_results_frame: Optional[ctk.CTkFrame] = None
-
     def _load_logo(self) -> Optional[ctk.CTkImage]:
         """Load the iPETRO logo from disk if available."""
         try:
@@ -254,7 +252,7 @@ class MainMenuView:
         # Section title
         welcome_label = ctk.CTkLabel(
             header_section,
-            text="Main Menu",
+            text="Admin Menu",
             font=("Segoe UI", 24, "bold"),
         )
         welcome_label.grid(row=0, column=0, sticky="w")
@@ -301,96 +299,26 @@ class MainMenuView:
         # Button configurations (New Work and Report Menu only)
         menu_buttons = [
             (
-                "📝 New Work",
-                "Create and manage new work items.",
-                self.controller.show_new_work,
-            ),
-            (
                 "📊 Report Menu",
                 "Generate and review reports.",
                 self.controller.show_report_menu,
             ),
         ]
 
-        # ================================================================
-        # ADMIN SECTION (Only visible to admins)
-        # ================================================================
+        # User Management card (always visible in admin menu)
+        menu_buttons.append((
+            "👥 User Management",
+            "Manage user accounts, roles, and access permissions.",
+            self.controller.show_user_management,
+        ))
+        
+        # Work Assignment card (Admin only - NEW!)
+        menu_buttons.append((
+            "📋 Work Assignment",
+            "Create works and assign engineers to projects.",
+            self.controller.show_work_management,
+        ))
 
-        current_user_role = self.controller.current_user.get("role")
-
-        if current_user_role == "Admin":
-            # Add a third row for admin section
-            buttons_frame.grid_rowconfigure(2, weight=1)
-
-            # Admin section separator
-            admin_separator = ctk.CTkFrame(
-                buttons_frame,
-                height=2,
-                fg_color=("gray80", "gray30"),
-            )
-            admin_separator.grid(
-                row=2, column=0, columnspan=2, sticky="ew", padx=10, pady=(20, 10)
-            )
-
-            # Admin label
-            admin_label = ctk.CTkLabel(
-                buttons_frame,
-                text="Administration",
-                font=("Segoe UI", 12, "bold"),
-                text_color=("gray50", "gray70"),
-            )
-            admin_label.grid(row=3, column=0, sticky="w", padx=14, pady=(0, 5))
-
-            # Admin card row
-            buttons_frame.grid_rowconfigure(4, weight=1)
-
-            # User Management card
-            admin_card = ctk.CTkFrame(
-                buttons_frame,
-                corner_radius=16,
-                border_width=1,
-                border_color=("#3498db", "#2980b9"),  # Blue border for admin card
-            )
-            admin_card.grid(
-                row=4,
-                column=0,
-                padx=10,
-                pady=10,
-                sticky="nsew",
-            )
-
-            admin_card.grid_rowconfigure(1, weight=1)
-            admin_card.grid_columnconfigure(0, weight=1)
-
-            admin_title_lbl = ctk.CTkLabel(
-                admin_card,
-                text="👥 User Management",
-                font=("Segoe UI", 15, "bold"),
-                anchor="w",
-            )
-            admin_title_lbl.grid(row=0, column=0, sticky="w", padx=18, pady=(14, 4))
-
-            admin_desc_lbl = ctk.CTkLabel(
-                admin_card,
-                text="Manage user accounts, roles, and access permissions.",
-                font=("Segoe UI", 11),
-                text_color=("gray25", "gray80"),
-                anchor="w",
-                justify="left",
-                wraplength=260,
-            )
-            admin_desc_lbl.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 10))
-
-            admin_action_btn = ctk.CTkButton(
-                admin_card,
-                text="Manage Users",
-                command=self.controller.show_user_management,
-                height=32,
-                font=("Segoe UI", 10, "bold"),
-                fg_color=("#3498db", "#2980b9"),  # Blue button for admin
-                hover_color=("#2980b9", "#1f5f89"),
-            )
-            admin_action_btn.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 16))
 
         # Create "cards" with button and description
         for idx, (title, description, command) in enumerate(menu_buttons):
@@ -442,23 +370,24 @@ class MainMenuView:
             action_btn.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 16))
 
     def initialize_analytics_data(self) -> Dict[str, int]:
+        """Get system-wide analytics for admin dashboard (ALL users' data)."""
         try:
             db = SessionLocal()
-            # Get all needed data
-            completed_work = DatabaseService.get_work_completion_percentage(
-                db=db, user_id=self.controller.current_user.get("id")
+            # Get SYSTEM-WIDE data (no user_id filter for admins)
+            completed_work = DatabaseService.get_system_work_completion_percentage(
+                db=db
             )
-
-            total_equipment = DatabaseService.get_total_equipment_count_for_all_works(
-                db=db, user_id=self.controller.current_user.get("id")
+            
+            total_equipment = DatabaseService.get_system_total_equipment_count(
+                db=db
             )
-
-            extracted_equipment = DatabaseService.get_fully_extracted_equipment_count(
-                db=db, user_id=self.controller.current_user.get("id")
+            
+            extracted_equipment = DatabaseService.get_system_extracted_equipment_count(
+                db=db
             )
-
-            # Calculate average health score
-            """"
+            
+            # Calculate average health score across ALL works
+            """
             health score is based on these factors:
 
             Equipment completion (fields filled)
@@ -469,36 +398,35 @@ class MainMenuView:
 
             Data quality (values are valid/complete)
             """
-            avg_health_score = DatabaseService.calculate_average_health_score(
-                db=db, user_id=self.controller.current_user.get("id")
+            avg_health_score = DatabaseService.get_system_average_health_score(
+                db=db
             )
-
+            
             # Calculate completion rate
             total_percentage = 0
             for work in completed_work.values():
                 total_percentage += work
-            completion_rate = (
-                int(total_percentage / len(completed_work)) if completed_work else 0
-            )
-
+            completion_rate = int(total_percentage / len(completed_work)) if completed_work else 0
+            
             analytics_data = {
-                "work_completion": (
-                    completion_rate if completion_rate is not None else 2
-                ),
-                "total_equipment": (
-                    total_equipment if total_equipment is not None else 2
-                ),
-                "equipment_extracted": (
-                    extracted_equipment if extracted_equipment is not None else 2
-                ),
-                "avg_health_score": (
-                    int(avg_health_score) if avg_health_score is not None else 61
-                ),
+                "work_completion": completion_rate if completion_rate is not None else 0,
+                "total_equipment": total_equipment if total_equipment is not None else 0,
+                "equipment_extracted": extracted_equipment if extracted_equipment is not None else 0,
+                "avg_health_score": int(avg_health_score) if avg_health_score is not None else 0,
             }
             return analytics_data
         except Exception as e:
             # Log error and return zeros on failure
-            print(f"Error initializing analytics data: {e}")
+            print(f"Error initializing admin analytics data: {e}")
+            return {
+                "work_completion": 0,
+                "total_equipment": 0,
+                "equipment_extracted": 0,
+                "avg_health_score": 0,
+            }
+        finally:
+            db.close()
+        
 
     def _build_embedded_analytics(self, parent, row: int):
         """Embedded analytics overview in main menu with simplified metrics."""
@@ -534,11 +462,9 @@ class MainMenuView:
 
         # ========== BACKEND INTEGRATION ==========
         analytics_data = self.initialize_analytics_data()
-
+        
         # Placeholder data for demonstration (REMOVE WHEN BACKEND IS IMPLEMENTED)
-        work_completion = analytics_data[
-            "work_completion"
-        ]  # % of work completed/total work
+        work_completion = analytics_data["work_completion"]  # % of work completed/total work
         equipment_extracted = analytics_data["equipment_extracted"]  # number extracted
         total_equipment = analytics_data["total_equipment"]  # total equipment
         avg_health_score = analytics_data["avg_health_score"]  # average health score
