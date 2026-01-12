@@ -32,15 +32,51 @@ class ReportMenuView:
         self.available_works = []  # Store works for current user
 
     def _get_available_works(self) -> List[Dict[str, Any]]:
-        """Get list of works available to the current user from controller."""
+        """Get list of works available to the current user from controller.
+        For admins, return ALL works. For engineers, return only assigned works."""
         try:
-            if hasattr(self.controller, 'available_works'):
-                return getattr(self.controller, 'available_works', [])
+            # Check if user is admin
+            current_user = getattr(self.controller, 'current_user', {})
+            user_role = current_user.get('role', '')
+
+            if user_role == 'Admin':
+                # Admin: Get ALL works from database
+                return self._get_all_works_from_database()
             else:
-                # Fallback to empty list
-                return []
+                # Engineer: Get only assigned works from controller
+                if hasattr(self.controller, 'available_works'):
+                    return getattr(self.controller, 'available_works', [])
+                else:
+                    # Fallback to empty list
+                    return []
         except Exception as e:
             print(f"Error getting available works: {e}")
+            return []
+
+    def _get_all_works_from_database(self) -> List[Dict[str, Any]]:
+        """Get all works from database (for admin users)."""
+        try:
+            from AutoRBI_Database.database.models.work import Work
+
+            # Query all works from database
+            works = self.db.query(Work).all()
+
+            # Convert to dict format matching controller's available_works format
+            works_list = []
+            for work in works:
+                works_list.append({
+                    'work_id': work.work_id,
+                    'work_name': work.work_name,
+                    'created_at': work.created_at.strftime('%Y-%m-%d %H:%M') if work.created_at else None,
+                    'status': work.status
+                })
+
+            return works_list
+
+        except Exception as e:
+            print(f"Error loading all works from database: {e}")
+            import traceback
+            traceback.print_exc()
             return []
 
     def _load_reports_from_filesystem(self) -> List[Dict[str, Any]]:
@@ -102,7 +138,10 @@ class ReportMenuView:
                 # Create report entry
                 latest_time = self._get_latest_modification_time(excel_versions, ppt_versions)
                 created_at = datetime.fromtimestamp(latest_time).strftime('%Y-%m-%d %H:%M') if latest_time else "-"
-                
+
+                # Get assigned engineers for this work (for admin view)
+                assigned_engineers = self._get_assigned_engineers(work_id)
+
                 reports.append({
                     'work_name': work_name,
                     'work_id': work_id,
@@ -112,7 +151,8 @@ class ReportMenuView:
                     'ppt_versions': ppt_versions,
                     'version_count': max(len(excel_versions), len(ppt_versions)),
                     'has_database_data': has_database_data,
-                    'has_files': bool(excel_versions or ppt_versions)
+                    'has_files': bool(excel_versions or ppt_versions),
+                    'assigned_engineers': assigned_engineers
                 })
         
         except Exception as e:
@@ -121,6 +161,43 @@ class ReportMenuView:
         # Sort by creation date (most recent first)
         reports.sort(key=lambda x: x['created_at'] if x['created_at'] != "-" else "0000-00-00 00:00", reverse=True)
         return reports
+
+    def _get_assigned_engineers(self, work_id: str) -> List[str]:
+        """Get list of engineers assigned to this work."""
+        try:
+            from AutoRBI_Database.database.models.work_assignment import WorkAssignment
+            from AutoRBI_Database.database.models.users import User
+
+            # Convert work_id to int if needed
+            try:
+                work_id_int = int(work_id)
+            except (ValueError, TypeError):
+                from AutoRBI_Database.database.models.work import Work
+                work = self.db.query(Work).filter(Work.work_name == work_id).first()
+                if not work:
+                    return []
+                work_id_int = work.work_id
+
+            # Query work assignments with user info
+            assignments = (
+                self.db.query(WorkAssignment, User)
+                .join(User, WorkAssignment.user_id == User.user_id)
+                .filter(WorkAssignment.work_id == work_id_int)
+                .all()
+            )
+
+            # Extract engineer names
+            engineers = []
+            for assignment, user in assignments:
+                # Use full_name if available, otherwise username
+                name = user.full_name if user.full_name else user.username
+                engineers.append(name)
+
+            return engineers
+
+        except Exception as e:
+            print(f"Error getting assigned engineers: {e}")
+            return []
 
     def _check_database_data_exists(self, work_id: str) -> bool:
         """Check if equipment data exists in database for this work."""
@@ -218,6 +295,7 @@ class ReportMenuView:
         has_database_data = report.get('has_database_data', False)
         has_files = report.get('has_files', False)
         work_name = report.get('work_name', '')
+        assigned_engineers = report.get('assigned_engineers', [])
 
         row_frame = ctk.CTkFrame(
             self.table_body,
@@ -260,7 +338,7 @@ class ReportMenuView:
                 status_texts.append(f"{version_count} file versions")
             elif excel_versions or ppt_versions:
                 status_texts.append("Files available")
-        
+
         if status_texts:
             status_label = ctk.CTkLabel(
                 name_frame,
@@ -270,6 +348,21 @@ class ReportMenuView:
                 anchor="w",
             )
             status_label.pack(anchor="w")
+
+        # Show assigned engineers (for admin view only)
+        current_user = getattr(self.controller, 'current_user', {})
+        user_role = current_user.get('role', '')
+
+        if user_role == 'Admin' and assigned_engineers:
+            engineers_text = "👥 " + ", ".join(assigned_engineers)
+            engineers_label = ctk.CTkLabel(
+                name_frame,
+                text=engineers_text,
+                font=("Segoe UI", 9),
+                text_color=("#3498db", "#5dade2"),
+                anchor="w",
+            )
+            engineers_label.pack(anchor="w")
 
         date_label = ctk.CTkLabel(
             row_frame,
@@ -829,9 +922,18 @@ class ReportMenuView:
         )
         page_title.grid(row=0, column=0, sticky="w", padx=24, pady=(18, 6))
 
+        # Dynamic subtitle based on user role
+        current_user = getattr(self.controller, 'current_user', {})
+        user_role = current_user.get('role', '')
+
+        if user_role == 'Admin':
+            subtitle_text = "📊 System-wide view • All reports from all engineers"
+        else:
+            subtitle_text = "View, edit, and export work reports with version control."
+
         subtitle_label = ctk.CTkLabel(
             main_frame,
-            text="View, edit, and export work reports with version control.",
+            text=subtitle_text,
             font=("Segoe UI", 11),
             text_color=("gray25", "gray80"),
         )
