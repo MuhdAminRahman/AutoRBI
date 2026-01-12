@@ -27,6 +27,7 @@ from AutoRBI_Database.database.models.correction_log import CorrectionLog
 
 from UserInterface.views import (
     AnalyticsView,
+    AdminAnalyticsView,
     LoginView,
     MainMenuView,
     AdminMenuView,
@@ -108,7 +109,8 @@ class AutoRBIApp(ctk.CTk):
         # Admin views
         self.user_management_view = UserManagementView(self, self)
         self.admin_menu_view = AdminMenuView(self, self)
-        
+        self.admin_analytics_view = AdminAnalyticsView(self, self)
+
         self.work_management_view = None
 
         # TEMP current user info (your code had this stub)
@@ -493,6 +495,25 @@ class AutoRBIApp(ctk.CTk):
         self.analytics_view = AnalyticsView(self, self)
         self.analytics_view.show()
 
+    def show_admin_analytics(self) -> None:
+        """Display the Admin Analytics Dashboard view (Admin only)."""
+        logger.info("Showing admin analytics dashboard")
+
+        # Verify user is admin
+        if self.current_user.get("role") != "Admin":
+            logger.warning(
+                f"Non-admin user {self.current_user.get('username')} "
+                f"attempted to access admin analytics"
+            )
+            self.notification_system.show_notification(
+                message="Access denied. Admin privileges required.",
+                notification_type="error",
+            )
+            self.show_main_menu()
+            return
+
+        self.admin_analytics_view.show()
+
     def show_settings(self) -> None:
         """Display the Settings view."""
         self.settings_view.show()
@@ -718,6 +739,128 @@ class AutoRBIApp(ctk.CTk):
         except Exception as e:
             logger.error(f"Controller: Error deleting work: {e}")
             return {"success": False, "message": str(e)}
+        finally:
+            db.close()
+
+    # ------------------------------------------------------------------ #
+    # Admin Analytics Methods
+    # ------------------------------------------------------------------ #
+
+    def get_user_performance_analytics(
+        self,
+        user_id: int,
+        period: str = "last_7_days"
+    ) -> dict:
+        """
+        Get comprehensive performance summary for a specific user.
+
+        Args:
+            user_id: ID of user to analyze
+            period: Time period ("today", "last_7_days", "last_month", "all")
+
+        Returns:
+            {"success": bool, "data": dict, "message": str}
+        """
+        from AutoRBI_Database.services.admin_analytics_service import get_user_performance_summary
+
+        logger.info(f"Controller: Fetching analytics for user {user_id} (period: {period})")
+
+        db = SessionLocal()
+        try:
+            return get_user_performance_summary(db, self.current_user, user_id, period)
+        except Exception as e:
+            logger.error(f"Controller: Error fetching user analytics: {e}")
+            return {
+                "success": False,
+                "message": "Failed to retrieve user analytics. Please try again.",
+                "error_type": "system_error"
+            }
+        finally:
+            db.close()
+
+    def get_team_analytics(self, period: str = "last_7_days") -> dict:
+        """
+        Get team-wide performance comparison across all engineers.
+
+        Args:
+            period: Time period filter
+
+        Returns:
+            {"success": bool, "data": list, "summary": dict, "message": str}
+        """
+        from AutoRBI_Database.services.admin_analytics_service import get_team_comparison
+
+        logger.info(f"Controller: Fetching team analytics (period: {period})")
+
+        db = SessionLocal()
+        try:
+            return get_team_comparison(db, self.current_user, period)
+        except Exception as e:
+            logger.error(f"Controller: Error fetching team analytics: {e}")
+            return {
+                "success": False,
+                "message": "Failed to retrieve team analytics. Please try again.",
+                "error_type": "system_error"
+            }
+        finally:
+            db.close()
+
+    def get_work_timeline_analytics(self, work_id: int) -> dict:
+        """
+        Get timeline of user activities on a specific work.
+
+        Args:
+            work_id: ID of work to analyze
+
+        Returns:
+            {"success": bool, "data": list, "work_info": dict, "message": str}
+        """
+        from AutoRBI_Database.services.admin_analytics_service import get_work_timeline
+
+        logger.info(f"Controller: Fetching work timeline for work {work_id}")
+
+        db = SessionLocal()
+        try:
+            return get_work_timeline(db, self.current_user, work_id)
+        except Exception as e:
+            logger.error(f"Controller: Error fetching work timeline: {e}")
+            return {
+                "success": False,
+                "message": "Failed to retrieve work timeline. Please try again.",
+                "error_type": "system_error"
+            }
+        finally:
+            db.close()
+
+    def get_productivity_analytics(
+        self,
+        user_id: int = None,
+        period: str = "last_7_days"
+    ) -> dict:
+        """
+        Get productivity insights including hourly patterns and daily activity.
+
+        Args:
+            user_id: Optional user ID (None = all users)
+            period: Time period filter
+
+        Returns:
+            {"success": bool, "data": dict, "message": str}
+        """
+        from AutoRBI_Database.services.admin_analytics_service import get_productivity_insights
+
+        logger.info(f"Controller: Fetching productivity insights (user_id: {user_id}, period: {period})")
+
+        db = SessionLocal()
+        try:
+            return get_productivity_insights(db, self.current_user, user_id, period)
+        except Exception as e:
+            logger.error(f"Controller: Error fetching productivity insights: {e}")
+            return {
+                "success": False,
+                "message": "Failed to retrieve productivity insights. Please try again.",
+                "error_type": "system_error"
+            }
         finally:
             db.close()
 

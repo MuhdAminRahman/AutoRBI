@@ -244,130 +244,195 @@ class AdminMenuView:
         main_frame.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
         main_frame.grid_columnconfigure(0, weight=1)
 
-        # Header section with title and Work History button
-        header_section = ctk.CTkFrame(main_frame, fg_color="transparent")
-        header_section.grid(row=0, column=0, sticky="ew", padx=24, pady=(18, 6))
+        # ========== ADMIN HEADER WITH BADGE ==========
+        header_section = ctk.CTkFrame(
+            main_frame,
+            fg_color=("gray95", "gray18"),
+            corner_radius=12,
+            border_width=2,
+            border_color=("#e74c3c", "#c0392b"),  # Red admin border
+        )
+        header_section.grid(row=0, column=0, sticky="ew", padx=24, pady=(18, 18))
         header_section.grid_columnconfigure(0, weight=1)
+
+        # Admin badge and title
+        title_container = ctk.CTkFrame(header_section, fg_color="transparent")
+        title_container.grid(row=0, column=0, sticky="w", padx=20, pady=16)
+
+        # Admin badge
+        admin_badge = ctk.CTkFrame(
+            title_container,
+            fg_color=("#e74c3c", "#c0392b"),
+            corner_radius=6,
+        )
+        admin_badge.pack(side="left", padx=(0, 12))
+
+        badge_label = ctk.CTkLabel(
+            admin_badge,
+            text="⚡ ADMIN",
+            font=("Segoe UI", 10, "bold"),
+            text_color="white",
+        )
+        badge_label.pack(padx=10, pady=4)
 
         # Section title
         welcome_label = ctk.CTkLabel(
-            header_section,
-            text="Admin Menu",
-            font=("Segoe UI", 24, "bold"),
+            title_container,
+            text="Control Panel",
+            font=("Segoe UI", 26, "bold"),
         )
-        welcome_label.grid(row=0, column=0, sticky="w")
-
-        # Work History button (top right, green color)
-        work_history_btn = ctk.CTkButton(
-            header_section,
-            text="📋 Work History",
-            command=self.controller.show_work_history,
-            width=140,
-            height=36,
-            font=("Segoe UI", 11, "bold"),
-            fg_color=("#2ecc71", "#27ae60"),
-            hover_color=("#27ae60", "#229954"),
-        )
-        work_history_btn.grid(row=0, column=1, sticky="e")
+        welcome_label.pack(side="left")
 
         subtitle_label = ctk.CTkLabel(
-            main_frame,
-            text="Monitor your RBI data assessment and quick actions.",
+            header_section,
+            text="System-wide oversight • User management • Performance analytics",
             font=("Segoe UI", 11),
-            text_color=("gray25", "gray80"),
+            text_color=("gray40", "gray75"),
         )
-        subtitle_label.grid(row=1, column=0, sticky="w", padx=24, pady=(0, 18))
+        subtitle_label.grid(row=1, column=0, sticky="w", padx=20, pady=(0, 16))
 
         # ========== ANALYTICS DASHBOARD SECTION ==========
         self._build_embedded_analytics(main_frame, row=2)
 
-        # ========== QUICK ACTIONS SECTION ==========
+        # ========== RECENT ACTIVITY FEED ==========
+        self._build_recent_activity_feed(main_frame, row=3)
+
+        # ========== ADMINISTRATIVE TOOLS SECTION ==========
         actions_title = ctk.CTkLabel(
             main_frame,
-            text="Quick Actions",
+            text="🛠️ Administrative Tools",
             font=("Segoe UI", 18, "bold"),
         )
-        actions_title.grid(row=3, column=0, sticky="w", padx=24, pady=(24, 12))
+        actions_title.grid(row=5, column=0, sticky="w", padx=24, pady=(24, 12))
 
-        # Menu buttons container (2 cards side by side)
+        # Menu buttons container (2x2 grid)
         buttons_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
-        buttons_frame.grid(row=4, column=0, sticky="ew", padx=24, pady=(0, 24))
+        buttons_frame.grid(row=6, column=0, sticky="ew", padx=24, pady=(0, 24))
 
+        # Configure grid for 2 columns
         buttons_frame.grid_columnconfigure(0, weight=1, uniform="menu_col")
         buttons_frame.grid_columnconfigure(1, weight=1, uniform="menu_col")
 
-        # Button configurations (New Work and Report Menu only)
-        menu_buttons = [
-            (
-                "📊 Report Menu",
-                "Generate and review reports.",
-                self.controller.show_report_menu,
-            ),
+        # Admin tool configurations with icons and colors
+        admin_tools = [
+            {
+                "icon": "👥",
+                "title": "User Management",
+                "description": "Manage user accounts, roles, and access permissions.",
+                "command": self.controller.show_user_management,
+                "color": ("#3498db", "#2980b9"),  # Blue
+            },
+            {
+                "icon": "📋",
+                "title": "Work Assignment",
+                "description": "Create works and assign engineers to projects.",
+                "command": self.controller.show_work_management,
+                "color": ("#9b59b6", "#8e44ad"),  # Purple
+            },
+            {
+                "icon": "📊",
+                "title": "User Analytics",
+                "description": "View team performance, productivity insights, and user activity metrics.",
+                "command": self.controller.show_admin_analytics,
+                "color": ("#2ecc71", "#27ae60"),  # Green
+            },
+            {
+                "icon": "📄",
+                "title": "Report Menu",
+                "description": "Generate and review system-wide reports and documentation.",
+                "command": self.controller.show_report_menu,
+                "color": ("#f39c12", "#e67e22"),  # Orange
+            },
         ]
 
-        # User Management card (always visible in admin menu)
-        menu_buttons.append((
-            "👥 User Management",
-            "Manage user accounts, roles, and access permissions.",
-            self.controller.show_user_management,
-        ))
-        
-        # Work Assignment card (Admin only - NEW!)
-        menu_buttons.append((
-            "📋 Work Assignment",
-            "Create works and assign engineers to projects.",
-            self.controller.show_work_management,
-        ))
+        # Create cards in 2x2 grid
+        for idx, tool in enumerate(admin_tools):
+            row = idx // 2
+            col = idx % 2
 
-
-        # Create "cards" with button and description
-        for idx, (title, description, command) in enumerate(menu_buttons):
-            col = idx
-
+            # Card with hover effect
             card = ctk.CTkFrame(
                 buttons_frame,
-                corner_radius=16,
-                border_width=1,
-                border_color=("gray80", "gray30"),
+                corner_radius=14,
+                border_width=2,
+                border_color=("gray85", "gray28"),
+                fg_color=("white", "gray17"),
             )
             card.grid(
-                row=0,
+                row=row,
                 column=col,
                 padx=10,
                 pady=10,
                 sticky="nsew",
             )
 
-            card.grid_rowconfigure(1, weight=1)
+            # Add hover effects
+            def on_enter(e, c=card, color=tool["color"]):
+                c.configure(
+                    border_color=color,
+                    fg_color=("gray98", "gray19"),
+                )
+
+            def on_leave(e, c=card):
+                c.configure(
+                    border_color=("gray85", "gray28"),
+                    fg_color=("white", "gray17"),
+                )
+
+            card.bind("<Enter>", on_enter)
+            card.bind("<Leave>", on_leave)
+
             card.grid_columnconfigure(0, weight=1)
 
+            # Icon badge at top
+            icon_frame = ctk.CTkFrame(
+                card,
+                width=56,
+                height=56,
+                corner_radius=28,
+                fg_color=tool["color"],
+            )
+            icon_frame.grid(row=0, column=0, pady=(20, 12))
+            icon_frame.grid_propagate(False)
+
+            icon_label = ctk.CTkLabel(
+                icon_frame,
+                text=tool["icon"],
+                font=("Segoe UI", 26),
+            )
+            icon_label.place(relx=0.5, rely=0.5, anchor="center")
+
+            # Title
             title_lbl = ctk.CTkLabel(
                 card,
-                text=title,
-                font=("Segoe UI", 15, "bold"),
-                anchor="w",
+                text=tool["title"],
+                font=("Segoe UI", 16, "bold"),
             )
-            title_lbl.grid(row=0, column=0, sticky="w", padx=18, pady=(14, 4))
+            title_lbl.grid(row=1, column=0, padx=20, pady=(0, 8))
 
+            # Description
             desc_lbl = ctk.CTkLabel(
                 card,
-                text=description,
-                font=("Segoe UI", 11),
-                text_color=("gray25", "gray80"),
-                anchor="w",
-                justify="left",
-                wraplength=260,
+                text=tool["description"],
+                font=("Segoe UI", 10),
+                text_color=("gray40", "gray75"),
+                wraplength=220,
+                justify="center",
             )
-            desc_lbl.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 10))
+            desc_lbl.grid(row=2, column=0, padx=20, pady=(0, 16))
 
+            # Action button
             action_btn = ctk.CTkButton(
                 card,
                 text="Open",
-                command=command,
-                height=32,
-                font=("Segoe UI", 10, "bold"),
+                command=tool["command"],
+                height=36,
+                font=("Segoe UI", 11, "bold"),
+                fg_color=tool["color"],
+                hover_color=tool["color"][1],
+                corner_radius=8,
             )
-            action_btn.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 16))
+            action_btn.grid(row=3, column=0, sticky="ew", padx=20, pady=(0, 20))
 
     def initialize_analytics_data(self) -> Dict[str, int]:
         """Get system-wide analytics for admin dashboard (ALL users' data)."""
@@ -430,35 +495,56 @@ class AdminMenuView:
 
     def _build_embedded_analytics(self, parent, row: int):
         """Embedded analytics overview in main menu with simplified metrics."""
-        # Analytics container
+        # Analytics container with distinct admin styling
         analytics_section = ctk.CTkFrame(
             parent,
-            corner_radius=12,
-            border_width=1,
-            border_color=("gray80", "gray30"),
+            corner_radius=14,
+            border_width=2,
+            border_color=("#3498db", "#2980b9"),  # Blue admin border
+            fg_color=("white", "gray17"),
         )
-        analytics_section.grid(row=row, column=0, sticky="ew", padx=24, pady=(0, 12))
+        analytics_section.grid(row=row, column=0, sticky="ew", padx=24, pady=(0, 18))
         analytics_section.grid_columnconfigure(0, weight=1)
 
-        # Analytics header
+        # Analytics header with badge
         header_frame = ctk.CTkFrame(analytics_section, fg_color="transparent")
-        header_frame.grid(row=0, column=0, sticky="ew", padx=18, pady=(14, 12))
+        header_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=(18, 14))
         header_frame.grid_columnconfigure(0, weight=1)
 
+        # Header container for badge + title
+        title_container = ctk.CTkFrame(header_frame, fg_color="transparent")
+        title_container.grid(row=0, column=0, sticky="w")
+
+        # System-wide badge
+        system_badge = ctk.CTkFrame(
+            title_container,
+            fg_color=("#3498db", "#2980b9"),
+            corner_radius=6,
+        )
+        system_badge.pack(side="left", padx=(0, 10))
+
+        badge_text = ctk.CTkLabel(
+            system_badge,
+            text="SYSTEM-WIDE",
+            font=("Segoe UI", 9, "bold"),
+            text_color="white",
+        )
+        badge_text.pack(padx=8, pady=3)
+
         analytics_title = ctk.CTkLabel(
-            header_frame,
+            title_container,
             text="📊 Analytics Overview",
             font=("Segoe UI", 18, "bold"),
         )
-        analytics_title.grid(row=0, column=0, sticky="w")
+        analytics_title.pack(side="left")
 
         analytics_subtitle = ctk.CTkLabel(
             header_frame,
-            text="Quick snapshot of your RBI assessment progress",
+            text="Real-time system metrics across all users and projects",
             font=("Segoe UI", 10),
             text_color=("gray40", "gray75"),
         )
-        analytics_subtitle.grid(row=1, column=0, sticky="w", pady=(2, 0))
+        analytics_subtitle.grid(row=1, column=0, sticky="w", pady=(4, 0))
 
         # ========== BACKEND INTEGRATION ==========
         analytics_data = self.initialize_analytics_data()
@@ -522,18 +608,248 @@ class AdminMenuView:
             color=health_color,
         )
 
-        # Analytics button at bottom left
+        # Analytics buttons at bottom
+        buttons_container = ctk.CTkFrame(analytics_section, fg_color="transparent")
+        buttons_container.grid(row=2, column=0, sticky="ew", padx=20, pady=(8, 18))
+
         view_analytics_btn = ctk.CTkButton(
-            analytics_section,
-            text="📊 View Full Analytics",
+            buttons_container,
+            text="📊 Work Analytics",
             command=self.controller.show_analytics,
-            width=180,
-            height=36,
+            width=160,
+            height=38,
             font=("Segoe UI", 11, "bold"),
             fg_color=("#3498db", "#2980b9"),
             hover_color=("#2980b9", "#21618c"),
+            corner_radius=8,
         )
-        view_analytics_btn.grid(row=2, column=0, sticky="w", padx=18, pady=(0, 16))
+        view_analytics_btn.pack(side="left", padx=(0, 10))
+
+        # Add User Analytics button
+        user_analytics_btn = ctk.CTkButton(
+            buttons_container,
+            text="👥 User Analytics",
+            command=self.controller.show_admin_analytics,
+            width=160,
+            height=38,
+            font=("Segoe UI", 11, "bold"),
+            fg_color=("#2ecc71", "#27ae60"),
+            hover_color=("#27ae60", "#229954"),
+            corner_radius=8,
+        )
+        user_analytics_btn.pack(side="left")
+
+    def _build_recent_activity_feed(self, parent, row: int):
+        """Build Recent Activity Feed section showing latest system activities."""
+        # Section title
+        activity_title = ctk.CTkLabel(
+            parent,
+            text="🕒 Recent Activity",
+            font=("Segoe UI", 18, "bold"),
+        )
+        activity_title.grid(row=row, column=0, sticky="w", padx=24, pady=(18, 12))
+
+        # Activity container with border
+        activity_section = ctk.CTkFrame(
+            parent,
+            corner_radius=14,
+            border_width=2,
+            border_color=("#9b59b6", "#8e44ad"),  # Purple border
+            fg_color=("white", "gray17"),
+        )
+        activity_section.grid(row=row + 1, column=0, sticky="ew", padx=24, pady=(0, 18))
+
+        # Get recent activities from database
+        activities = self._get_recent_activities()
+
+        if not activities:
+            # No activities placeholder
+            no_activity = ctk.CTkLabel(
+                activity_section,
+                text="No recent activity to display",
+                font=("Segoe UI", 11),
+                text_color=("gray60", "gray80"),
+            )
+            no_activity.pack(pady=40)
+            return
+
+        # Activity feed container (scrollable if needed)
+        activity_feed = ctk.CTkFrame(activity_section, fg_color="transparent")
+        activity_feed.pack(fill="both", expand=True, padx=20, pady=18)
+
+        # Display activities in timeline format
+        for idx, activity in enumerate(activities[:8]):  # Show max 8 activities
+            self._create_activity_item(activity_feed, activity, idx)
+
+        # "View All" button at bottom
+        view_all_btn = ctk.CTkButton(
+            activity_section,
+            text="View Full History →",
+            command=self.controller.show_work_history,
+            width=140,
+            height=32,
+            font=("Segoe UI", 10, "bold"),
+            fg_color="transparent",
+            text_color=("#9b59b6", "#8e44ad"),
+            hover_color=("gray90", "gray25"),
+            border_width=2,
+            border_color=("#9b59b6", "#8e44ad"),
+            corner_radius=8,
+        )
+        view_all_btn.pack(pady=(0, 18))
+
+    def _create_activity_item(self, parent, activity: dict, index: int):
+        """Create a single activity item in timeline format."""
+        # Activity row
+        activity_row = ctk.CTkFrame(
+            parent,
+            fg_color=("gray95", "gray20"),
+            corner_radius=10,
+        )
+        activity_row.pack(fill="x", pady=(0, 8))
+        activity_row.grid_columnconfigure(1, weight=1)
+
+        # Icon/color based on action type
+        action_icons = {
+            "upload_pdf": ("📤", "#3498db"),
+            "extract": ("🔍", "#2ecc71"),
+            "correct": ("✏️", "#f39c12"),
+            "generate_excel": ("📊", "#9b59b6"),
+            "generate_ppt": ("📑", "#e74c3c"),
+            "login": ("🔓", "#16a085"),
+            "work_created": ("➕", "#9b59b6"),
+            "work_assigned": ("👥", "#3498db"),
+        }
+
+        icon, color = action_icons.get(
+            activity.get("action_type", ""),
+            ("📋", "#95a5a6")  # Default
+        )
+
+        # Icon badge
+        icon_frame = ctk.CTkFrame(
+            activity_row,
+            width=40,
+            height=40,
+            corner_radius=20,
+            fg_color=color,
+        )
+        icon_frame.grid(row=0, column=0, padx=12, pady=10)
+        icon_frame.grid_propagate(False)
+
+        icon_label = ctk.CTkLabel(
+            icon_frame,
+            text=icon,
+            font=("Segoe UI", 16),
+        )
+        icon_label.place(relx=0.5, rely=0.5, anchor="center")
+
+        # Activity details
+        details_frame = ctk.CTkFrame(activity_row, fg_color="transparent")
+        details_frame.grid(row=0, column=1, sticky="w", padx=10, pady=10)
+
+        # Main text
+        main_text = ctk.CTkLabel(
+            details_frame,
+            text=activity.get("description", "Activity"),
+            font=("Segoe UI", 11),
+            anchor="w",
+        )
+        main_text.pack(anchor="w")
+
+        # Metadata (user + time)
+        metadata_text = f"{activity.get('user', 'Unknown')} • {activity.get('time_ago', 'Unknown')}"
+        metadata_label = ctk.CTkLabel(
+            details_frame,
+            text=metadata_text,
+            font=("Segoe UI", 9),
+            text_color=("gray50", "gray70"),
+            anchor="w",
+        )
+        metadata_label.pack(anchor="w", pady=(2, 0))
+
+    def _get_recent_activities(self) -> List[Dict]:
+        """
+        Fetch recent activities from work history.
+
+        Returns list of activity dicts with:
+        - action_type: str
+        - description: str
+        - user: str (username or full name)
+        - time_ago: str (human-readable time)
+        - timestamp: datetime
+        """
+        try:
+            db = SessionLocal()
+            from AutoRBI_Database.database.models.work_history import WorkHistory
+            from AutoRBI_Database.database.models.users import User
+            from datetime import datetime, timezone
+
+            # Get last 10 activities with user info
+            results = (
+                db.query(WorkHistory, User)
+                .join(User, WorkHistory.user_id == User.user_id)
+                .order_by(WorkHistory.timestamp.desc())
+                .limit(10)
+                .all()
+            )
+
+            activities = []
+            for history, user in results:
+                # Calculate time ago
+                time_ago = self._format_time_ago(history.timestamp)
+
+                # Format description
+                description = history.description or f"{history.action_type.replace('_', ' ').title()}"
+
+                activities.append({
+                    "action_type": history.action_type,
+                    "description": description,
+                    "user": user.full_name or user.username,
+                    "time_ago": time_ago,
+                    "timestamp": history.timestamp,
+                })
+
+            return activities
+
+        except Exception as e:
+            print(f"Error fetching recent activities: {e}")
+            return []
+        finally:
+            db.close()
+
+    def _format_time_ago(self, timestamp) -> str:
+        """Format timestamp as human-readable 'time ago' string."""
+        if not timestamp:
+            return "Unknown"
+
+        try:
+            from datetime import datetime, timezone
+
+            # Ensure timestamp is timezone-aware
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
+
+            now = datetime.now(timezone.utc)
+            delta = now - timestamp
+
+            seconds = delta.total_seconds()
+
+            if seconds < 60:
+                return "Just now"
+            elif seconds < 3600:
+                minutes = int(seconds / 60)
+                return f"{minutes}m ago"
+            elif seconds < 86400:
+                hours = int(seconds / 3600)
+                return f"{hours}h ago"
+            elif seconds < 604800:
+                days = int(seconds / 86400)
+                return f"{days}d ago"
+            else:
+                return timestamp.strftime("%b %d")
+        except Exception:
+            return "Unknown"
 
     def _create_circular_metric(
         self,

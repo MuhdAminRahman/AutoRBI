@@ -11,9 +11,11 @@ This layer handles:
 from sqlalchemy.orm import Session
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
-from sqlalchemy import text 
+from sqlalchemy import text, and_
 
 from AutoRBI_Database.logging_config import get_logger
+from AutoRBI_Database.database.models.work_history import WorkHistory
+from AutoRBI_Database.database.models.users import User
 from AutoRBI_Database.database.crud.work_history_crud import (
     get_paginated_history,
     count_history_entries,
@@ -37,17 +39,18 @@ logger = get_logger(__name__)
 # ============================================================================
 
 
-def history_to_dict(history) -> dict:
+def history_to_dict(history, user_info: dict = None) -> dict:
     """
     Convert WorkHistory object to dictionary for UI.
 
     Args:
         history: WorkHistory model object
+        user_info: Optional dict with user details (username, full_name, role)
 
     Returns:
         Dictionary with history data formatted for UI
     """
-    return {
+    result = {
         "id": history.history_id,
         "work_id": history.work_id,
         "user_id": history.user_id,
@@ -63,6 +66,19 @@ def history_to_dict(history) -> dict:
         "date": history.timestamp.strftime("%Y-%m-%d") if history.timestamp else "-",
         "time": history.timestamp.strftime("%H:%M:%S") if history.timestamp else "-",
     }
+
+    # Add user information if provided
+    if user_info:
+        result["username"] = user_info.get("username", "-")
+        result["user_full_name"] = user_info.get("full_name", "-")
+        result["user_role"] = user_info.get("role", "-")
+    else:
+        # Default values if no user info provided
+        result["username"] = "-"
+        result["user_full_name"] = "-"
+        result["user_role"] = "-"
+
+    return result
 
 
 def calculate_date_range(period: str) -> tuple:
@@ -191,46 +207,72 @@ def get_work_history(
         # 2. Calculate date range from period
         start_date, end_date = calculate_date_range(period)
 
-        # 3. Get paginated data from CRUD
-        history_entries, total = get_paginated_history(
-            db=db,
-            user_id=filter_user_id,
-            work_id=work_id,
-            start_date=start_date,
-            end_date=end_date,
-            page=page,
-            per_page=per_page,
+        # 3. Get paginated data from CRUD with user details
+        # Build query with JOIN to User table
+        query = db.query(WorkHistory, User).join(User, WorkHistory.user_id == User.user_id)
+
+        # Apply filters
+        filters = []
+        if filter_user_id:
+            filters.append(WorkHistory.user_id == filter_user_id)
+        if work_id:
+            filters.append(WorkHistory.work_id == work_id)
+        if start_date:
+            filters.append(WorkHistory.timestamp >= start_date)
+        if end_date:
+            filters.append(WorkHistory.timestamp <= end_date)
+
+        if filters:
+            query = query.filter(and_(*filters))
+
+        # Get total count
+        total = query.count()
+
+        # Apply pagination and ordering
+        results = (
+            query.order_by(WorkHistory.timestamp.desc())
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+            .all()
         )
 
         # 4. Transform to UI format
         history_data = []
-        for entry in history_entries:
-            item = history_to_dict(entry)
+        for history_entry, user in results:
+            # Prepare user info dict
+            user_info = {
+                "username": user.username,
+                "full_name": user.full_name,
+                "role": user.role
+            }
+
+            # Convert history to dict with user info
+            item = history_to_dict(history_entry, user_info)
 
             # Try to extract equipment name from description
             equipment_name = "-"
 
             # First, try to get from equipment_id if it exists
-            if entry.equipment_id:
+            if history_entry.equipment_id:
                 try:
                     result = db.execute(
                         text("SELECT equipment_no FROM equipment WHERE equipment_id = :eq_id"),
-                        {"eq_id": entry.equipment_id},
+                        {"eq_id": history_entry.equipment_id},
                     ).fetchone()
 
                     if result:
                         equipment_name = result[0]
                 except Exception as e:
                     logger.warning(
-                        f"Could not fetch equipment name for equipment_id {entry.equipment_id}: {e}"
+                        f"Could not fetch equipment name for equipment_id {history_entry.equipment_id}: {e}"
                     )
 
             # If still not found, try to extract from description
-            if equipment_name == "-" and entry.description:
+            if equipment_name == "-" and history_entry.description:
                 import re
 
                 # Pattern to match equipment codes like H-001, V-006, etc.
-                match = re.search(r"([A-Z]-\d{3})", entry.description)
+                match = re.search(r"([A-Z]-\d{3})", history_entry.description)
                 if match:
                     equipment_name = match.group(1)
 

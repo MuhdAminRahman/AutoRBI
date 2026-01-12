@@ -7,6 +7,7 @@ from .new_work import NewWorkView
 from .report_menu import ReportMenuView
 from .work_history import WorkHistoryView
 from .analytics import AnalyticsView
+from .admin_analytics_view import AdminAnalyticsView
 from .settings import SettingsView
 from .profile import ProfileView
 from .constants import Fonts, Colors, Sizes, Messages, TableColumns
@@ -40,6 +41,7 @@ __all__ = [
     "ReportMenuView",
     "WorkHistoryView",
     "AnalyticsView",
+    "AdminAnalyticsView",
     "SettingsView",
     "ProfileView",
     "Fonts",

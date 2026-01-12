@@ -162,7 +162,8 @@ class WorkHistoryView:
         description = item.get("description", "-")
         timestamp = item.get("timestamp", "-")
         work_id = item.get("work_id", "-")
-        equipment_name = item.get("equipment_name", "-")  # NEW: Equipment column
+        user_full_name = item.get("user_full_name", "-")  # NEW: User column
+        equipment_name = item.get("equipment_name", "-")
 
         # Table row frame - FIXED HEIGHT
         row_frame = ctk.CTkFrame(
@@ -172,19 +173,18 @@ class WorkHistoryView:
             border_color=("gray80", "gray30"),
             height=60,  # Fixed height for all rows
         )
-        row_frame.grid(row=index, column=0, columnspan=7, sticky="ew", pady=2)
+        row_frame.grid(row=index, column=0, columnspan=8, sticky="ew", pady=2)
         row_frame.pack_propagate(False)  # Prevent frame from resizing based on content
 
         # Configure columns with FIXED widths
         row_frame.grid_columnconfigure(0, weight=0, minsize=60)  # No.
         row_frame.grid_columnconfigure(1, weight=0, minsize=90)  # Work ID
-        row_frame.grid_columnconfigure(2, weight=0, minsize=120)  # Equipment (NEW)
-        row_frame.grid_columnconfigure(3, weight=0, minsize=140)  # Action Type
-        row_frame.grid_columnconfigure(4, weight=1, minsize=200)  # Description
-        row_frame.grid_columnconfigure(5, weight=0, minsize=150)  # Timestamp
-        row_frame.grid_columnconfigure(
-            6, weight=0, minsize=100
-        )  # Actions (Delete only)
+        row_frame.grid_columnconfigure(2, weight=0, minsize=130)  # User (NEW)
+        row_frame.grid_columnconfigure(3, weight=0, minsize=110)  # Equipment
+        row_frame.grid_columnconfigure(4, weight=0, minsize=130)  # Action Type
+        row_frame.grid_columnconfigure(5, weight=1, minsize=180)  # Description
+        row_frame.grid_columnconfigure(6, weight=0, minsize=150)  # Timestamp
+        row_frame.grid_columnconfigure(7, weight=0, minsize=100)  # Actions (Delete only)
 
         # Column 0: No.
         no_label = ctk.CTkLabel(
@@ -205,25 +205,35 @@ class WorkHistoryView:
         )
         work_id_label.grid(row=0, column=1, sticky="nsew", padx=8, pady=12)
 
-        # Column 2: Equipment (NEW)
+        # Column 2: User (NEW)
+        user_label = ctk.CTkLabel(
+            row_frame,
+            text=str(user_full_name),
+            font=("Segoe UI", 10, "bold"),
+            text_color=("#2563eb", "#3b82f6"),
+            anchor="center",
+        )
+        user_label.grid(row=0, column=2, sticky="nsew", padx=8, pady=12)
+
+        # Column 3: Equipment
         equipment_label = ctk.CTkLabel(
             row_frame,
             text=str(equipment_name),
-            font=("Segoe UI", 11, "bold"),
+            font=("Segoe UI", 10),
             anchor="center",
         )
-        equipment_label.grid(row=0, column=2, sticky="nsew", padx=8, pady=12)
+        equipment_label.grid(row=0, column=3, sticky="nsew", padx=8, pady=12)
 
-        # Column 3: Action Type
+        # Column 4: Action Type
         action_label = ctk.CTkLabel(
             row_frame,
             text=action_type,
             font=("Segoe UI", 10),
             anchor="w",
         )
-        action_label.grid(row=0, column=3, sticky="nsew", padx=8, pady=12)
+        action_label.grid(row=0, column=4, sticky="nsew", padx=8, pady=12)
 
-        # Column 4: Description - truncate long text
+        # Column 5: Description - truncate long text
         # Truncate description to fit in fixed width
         max_desc_length = 40
         truncated_desc = (
@@ -239,9 +249,9 @@ class WorkHistoryView:
             text_color=("gray60", "gray80"),
             anchor="w",
         )
-        desc_label.grid(row=0, column=4, sticky="nsew", padx=8, pady=12)
+        desc_label.grid(row=0, column=5, sticky="nsew", padx=8, pady=12)
 
-        # Column 5: Timestamp
+        # Column 6: Timestamp
         timestamp_display = self._format_timestamp(timestamp)
         time_label = ctk.CTkLabel(
             row_frame,
@@ -250,11 +260,11 @@ class WorkHistoryView:
             text_color=("gray60", "gray80"),
             anchor="center",
         )
-        time_label.grid(row=0, column=5, sticky="nsew", padx=8, pady=12)
+        time_label.grid(row=0, column=6, sticky="nsew", padx=8, pady=12)
 
-        # Column 6: Actions (Delete button - ADMIN ONLY)
+        # Column 7: Actions (Delete button - ADMIN ONLY)
         actions_frame = ctk.CTkFrame(row_frame, fg_color="transparent")
-        actions_frame.grid(row=0, column=6, sticky="nsew", padx=8, pady=12)
+        actions_frame.grid(row=0, column=7, sticky="nsew", padx=8, pady=12)
 
         if is_admin:
             # Show delete button only for Admin
@@ -402,15 +412,17 @@ class WorkHistoryView:
         # Configure header columns with FIXED widths (same as row columns)
         header_row.grid_columnconfigure(0, weight=0, minsize=60)  # No.
         header_row.grid_columnconfigure(1, weight=0, minsize=90)  # Work ID
-        header_row.grid_columnconfigure(2, weight=0, minsize=120)  # Equipment (NEW)
-        header_row.grid_columnconfigure(3, weight=0, minsize=140)  # Action Type
-        header_row.grid_columnconfigure(4, weight=1, minsize=200)  # Description
-        header_row.grid_columnconfigure(5, weight=0, minsize=150)  # Timestamp
-        header_row.grid_columnconfigure(6, weight=0, minsize=100)  # Actions
+        header_row.grid_columnconfigure(2, weight=0, minsize=130)  # User (NEW)
+        header_row.grid_columnconfigure(3, weight=0, minsize=110)  # Equipment
+        header_row.grid_columnconfigure(4, weight=0, minsize=130)  # Action Type
+        header_row.grid_columnconfigure(5, weight=1, minsize=180)  # Description
+        header_row.grid_columnconfigure(6, weight=0, minsize=150)  # Timestamp
+        header_row.grid_columnconfigure(7, weight=0, minsize=100)  # Actions
 
         headers = [
             "No.",
             "Work ID",
+            "User",
             "Equipment",
             "Action Type",
             "Description",
@@ -422,7 +434,7 @@ class WorkHistoryView:
                 header_row,
                 text=header_text,
                 font=("Segoe UI", 11, "bold"),
-                anchor="center" if col in [0, 1, 2, 5, 6] else "w",
+                anchor="center" if col in [0, 1, 2, 3, 6, 7] else "w",  # Center: No, Work ID, User, Equipment, Timestamp, Actions
             )
             header_label.grid(row=0, column=col, sticky="nsew", padx=8, pady=10)
 
@@ -435,9 +447,8 @@ class WorkHistoryView:
         # Configure table body columns with FIXED widths (same as header)
         self.table_body.grid_columnconfigure(0, weight=0, minsize=60)  # No.
         self.table_body.grid_columnconfigure(1, weight=0, minsize=90)  # Work ID
-        self.table_body.grid_columnconfigure(
-            2, weight=0, minsize=120
-        )  # Equipment (NEW)
+        self.table_body.grid_columnconfigure(2, weight=0, minsize=130)  # User (NEW)
+        self.table_body.grid_columnconfigure(3, weight=0, minsize=110)  # Equipment
         self.table_body.grid_columnconfigure(3, weight=0, minsize=140)  # Action Type
         self.table_body.grid_columnconfigure(4, weight=1, minsize=200)  # Description
         self.table_body.grid_columnconfigure(5, weight=0, minsize=150)  # Timestamp
